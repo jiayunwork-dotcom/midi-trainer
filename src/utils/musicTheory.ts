@@ -175,15 +175,23 @@ export function getProgressionChords(
   isMinorKey: boolean
 ): { chord: ChordData; root: number }[] {
   const majorScaleIntervals = [0, 2, 4, 5, 7, 9, 11];
-  const minorScaleIntervals = [0, 2, 3, 5, 7, 8, 10];
+  const harmonicMinorIntervals = [0, 2, 3, 5, 7, 8, 11];
   
-  const scaleIntervals = isMinorKey ? minorScaleIntervals : majorScaleIntervals;
+  const majorDegreeQualities = ["major", "minor", "minor", "major", "major", "minor", "diminished"];
+  const minorDegreeQualities = ["minor", "diminished", "major", "minor", "major", "major", "diminished"];
+  
+  const scaleIntervals = isMinorKey ? harmonicMinorIntervals : majorScaleIntervals;
+  const degreeQualities = isMinorKey ? minorDegreeQualities : majorDegreeQualities;
   
   return progression.degrees.map((degree, index) => {
     const interval = scaleIntervals[degree];
     const root = keyRoot + interval;
-    const chordType = progression.types[index];
-    const chord = CHORDS.find(c => c.name === chordType) || CHORDS[0];
+    
+    const explicitType = progression.types[index];
+    const isSpecialType = explicitType.includes("7th") || explicitType.includes("sus") || explicitType.includes("add") || explicitType.includes("augmented") || explicitType.includes("diminished");
+    
+    const chordTypeName = isSpecialType ? explicitType : degreeQualities[degree];
+    const chord = CHORDS.find(c => c.name === chordTypeName) || CHORDS[0];
     return { chord, root };
   });
 }

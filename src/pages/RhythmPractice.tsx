@@ -32,34 +32,56 @@ const RhythmPractice = () => {
   const practiceStartRef = useRef<number>(0);
   const totalBeatsRef = useRef(0);
   const hitIndexRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const [accentBeats, setAccentBeats] = useState<number[]>([0]);
+
+  const getAudioContext = useCallback(() => {
+    if (!audioContextRef.current) {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      audioContextRef.current = new Ctx();
+    }
+    if (audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume();
+    }
+    return audioContextRef.current;
+  }, []);
 
   const getBeatDuration = useCallback(() => {
     return 60000 / bpm;
   }, [bpm]);
 
   const playClick = useCallback((isAccent: boolean) => {
-    const freq = isAccent ? 600 : 800;
-    const volume = isAccent ? 0.5 : 0.3;
-    const duration = isAccent ? 0.08 : 0.05;
-    
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.frequency.value = freq;
-    oscillator.type = isAccent ? "triangle" : "sine";
-    
-    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
-    
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + duration);
-  }, []);
+    try {
+      const audioContext = getAudioContext();
+      const freq = isAccent ? 600 : 800;
+      const volume = isAccent ? 0.5 : 0.3;
+      const duration = isAccent ? 0.08 : 0.05;
+      const now = audioContext.currentTime;
+      
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = freq;
+      oscillator.type = isAccent ? "triangle" : "sine";
+      
+      gainNode.gain.setValueAtTime(volume, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      
+      oscillator.start(now);
+      oscillator.stop(now + duration);
+
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gainNode.disconnect();
+      };
+    } catch (e) {
+      console.error("playClick error:", e);
+    }
+  }, [getAudioContext]);
 
   useEffect(() => {
     if (!isPlaying) {
