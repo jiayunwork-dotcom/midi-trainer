@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use chrono::{Duration, Local, NaiveDate, Datelike};
 use dirs::data_dir;
-use crate::models::{Achievement, PracticeSession, WeeklyStats};
+use crate::models::{Achievement, PracticeSession, WeeklyStats, BattleRecord, BattleRecordDisplay};
 use crate::AppState;
 
 pub struct Storage {
@@ -59,6 +59,24 @@ impl Storage {
             "CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS battle_records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player1_name TEXT NOT NULL,
+                player2_name TEXT NOT NULL,
+                scale_type TEXT NOT NULL,
+                octaves INTEGER NOT NULL,
+                rounds TEXT NOT NULL,
+                p1_wins INTEGER NOT NULL DEFAULT 0,
+                p2_wins INTEGER NOT NULL DEFAULT 0,
+                winner TEXT NOT NULL,
+                total_duration_ms INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )",
             [],
         )?;
@@ -319,6 +337,54 @@ impl Storage {
         let secs: i64 = stmt.query_row([today], |row| row.get(0)).unwrap_or(0);
         Ok(secs as u32)
     }
+
+    pub fn save_battle_record(&self, record: BattleRecord) -> Result<i64> {
+        let conn = self.get_conn();
+        conn.execute(
+            "INSERT INTO battle_records (
+                player1_name, player2_name, scale_type, octaves, rounds,
+                p1_wins, p2_wins, winner, total_duration_ms, date
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            [
+                &record.player1_name,
+                &record.player2_name,
+                &record.scale_type,
+                &record.octaves.to_string(),
+                &record.rounds,
+                &record.p1_wins.to_string(),
+                &record.p2_wins.to_string(),
+                &record.winner,
+                &record.total_duration_ms.to_string(),
+                &record.date.format("%Y-%m-%d").to_string(),
+            ],
+        )?;
+        
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_battle_history(&self, limit: u32) -> Result<Vec<BattleRecordDisplay>> {
+        let conn = self.get_conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, player1_name, player2_name, p1_wins, p2_wins, winner, date, created_at
+             FROM battle_records 
+             ORDER BY created_at DESC 
+             LIMIT ?1",
+        )?;
+        
+        let records = stmt.query_map([limit.to_string()], |row| {
+            Ok(BattleRecordDisplay {
+                id: row.get(0)?,
+                player1_name: row.get(1)?,
+                player2_name: row.get(2)?,
+                p1_wins: row.get(3)?,
+                p2_wins: row.get(4)?,
+                winner: row.get(5)?,
+                date: row.get(6)?,
+            })
+        })?;
+        
+        Ok(records.filter_map(|r| r.ok()).collect())
+    }
 }
 
 #[tauri::command]
@@ -381,5 +447,19 @@ pub fn set_daily_goal(state: tauri::State<AppState>, minutes: u32) -> Result<(),
 pub fn get_today_practice_time(state: tauri::State<AppState>) -> Result<u32, String> {
     state.storage.lock()
         .get_today_practice_time()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_battle_record(state: tauri::State<AppState>, record: BattleRecord) -> Result<i64, String> {
+    state.storage.lock()
+        .save_battle_record(record)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_battle_history(state: tauri::State<AppState>, limit: u32) -> Result<Vec<BattleRecordDisplay>, String> {
+    state.storage.lock()
+        .get_battle_history(limit)
         .map_err(|e| e.to_string())
 }

@@ -37,6 +37,41 @@ export interface WeeklyStats {
   module_accuracy: [string, number][];
 }
 
+export interface BattleRound {
+  roundNumber: number;
+  rootNote: number;
+  p1DurationMs: number;
+  p1Errors: number;
+  p2DurationMs: number;
+  p2Errors: number;
+  winner: string | null;
+}
+
+export interface BattleRecord {
+  id?: number;
+  player1Name: string;
+  player2Name: string;
+  scaleType: string;
+  octaves: number;
+  rounds: string;
+  p1Wins: number;
+  p2Wins: number;
+  winner: string;
+  totalDurationMs: number;
+  date: string;
+  createdAt?: string;
+}
+
+export interface BattleRecordDisplay {
+  id: number;
+  player1Name: string;
+  player2Name: string;
+  p1Wins: number;
+  p2Wins: number;
+  winner: string;
+  date: string;
+}
+
 interface AppState {
   midiDevices: MidiDevice[];
   midiDevice: MidiDevice | null;
@@ -64,6 +99,8 @@ interface AppState {
   loadStats: () => Promise<void>;
   loadAchievements: () => Promise<void>;
   savePracticeSession: (session: PracticeSession) => Promise<number>;
+  saveBattleRecord: (record: BattleRecord) => Promise<number>;
+  loadBattleHistory: (limit?: number) => Promise<BattleRecordDisplay[]>;
   
   showAchievementNotification: (achievement: Achievement) => void;
 }
@@ -211,6 +248,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.error("Failed to save session:", e);
       return -1;
+    }
+  },
+
+  saveBattleRecord: async (record: BattleRecord) => {
+    try {
+      const id = await invoke<number>("save_battle_record", { record });
+      return id;
+    } catch (e) {
+      console.error("Failed to save battle record:", e);
+      return -1;
+    }
+  },
+
+  loadBattleHistory: async (limit = 10) => {
+    try {
+      const history = await invoke<BattleRecordDisplay[]>("get_battle_history", { limit });
+      return history;
+    } catch (e) {
+      console.error("Failed to load battle history:", e);
+      return [];
     }
   },
 

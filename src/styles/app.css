@@ -80,6 +80,18 @@
   overflow: hidden;
 }
 
+.main-content.fullscreen {
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+.main-content.fullscreen .content-area {
+  padding: 0;
+  flex: 1;
+  height: 100%;
+}
+
 .content-area {
   flex: 1;
   overflow-y: auto;

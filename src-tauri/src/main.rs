@@ -63,6 +63,8 @@ fn main() {
             storage::get_daily_goal,
             storage::set_daily_goal,
             storage::get_today_practice_time,
+            storage::save_battle_record,
+            storage::get_battle_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

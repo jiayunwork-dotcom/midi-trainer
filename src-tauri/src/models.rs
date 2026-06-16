@@ -56,3 +56,41 @@ pub enum SoundPreset {
     ElectricPiano,
     Organ,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleRound {
+    pub round_number: u32,
+    pub root_note: u8,
+    pub p1_duration_ms: u64,
+    pub p1_errors: u32,
+    pub p2_duration_ms: u64,
+    pub p2_errors: u32,
+    pub winner: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleRecord {
+    pub id: Option<i64>,
+    pub player1_name: String,
+    pub player2_name: String,
+    pub scale_type: String,
+    pub octaves: u32,
+    pub rounds: String,
+    pub p1_wins: u32,
+    pub p2_wins: u32,
+    pub winner: String,
+    pub total_duration_ms: u64,
+    pub date: NaiveDate,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BattleRecordDisplay {
+    pub id: i64,
+    pub player1_name: String,
+    pub player2_name: String,
+    pub p1_wins: u32,
+    pub p2_wins: u32,
+    pub winner: String,
+    pub date: String,
+}

@@ -1,0 +1,376 @@
+import { create } from "zustand";
+import { SCALES, ScaleData, getScaleNotes } from "../utils/musicTheory";
+import { BattleRound, BattleRecord } from "./appStore";
+
+export type BattlePhase = "lobby" | "countdown" | "playing" | "roundBreak" | "finished";
+export type CurrentPlayer = 1 | 2;
+
+export interface PlayerState {
+  name: string;
+  ready: boolean;
+  currentNoteIndex: number;
+  correctNotes: number;
+  wrongNotes: number;
+  startTime: number;
+  durationMs: number;
+  isTurn: boolean;
+}
+
+export interface BattleState {
+  phase: BattlePhase;
+  countdown: number;
+  breakCountdown: number;
+  currentRound: number;
+  totalRounds: number;
+  currentPlayer: CurrentPlayer;
+  
+  player1: PlayerState;
+  player2: PlayerState;
+  
+  selectedScale: ScaleData;
+  octaves: number;
+  rootNote: number;
+  scaleNotes: number[];
+  
+  rounds: BattleRound[];
+  currentRoundData: BattleRound | null;
+  
+  setPlayerName: (player: CurrentPlayer, name: string) => void;
+  setPlayerReady: (player: CurrentPlayer, ready: boolean) => void;
+  setSelectedScale: (scale: ScaleData) => void;
+  setOctaves: (octaves: number) => void;
+  
+  startCountdown: () => void;
+  startBattle: () => void;
+  
+  generateRoundScale: () => void;
+  handleNotePlayed: (note: number) => "correct" | "wrong" | null;
+  switchPlayer: () => void;
+  finishRound: () => void;
+  startNextRound: () => void;
+  
+  finishBattle: () => BattleRecord;
+  resetBattle: () => void;
+}
+
+const createInitialPlayerState = (playerNum: 1 | 2): PlayerState => ({
+  name: `Player ${playerNum}`,
+  ready: false,
+  currentNoteIndex: 0,
+  correctNotes: 0,
+  wrongNotes: 0,
+  startTime: 0,
+  durationMs: 0,
+  isTurn: playerNum === 1,
+});
+
+export const useBattleStore = create<BattleState>((set, get) => ({
+  phase: "lobby",
+  countdown: 3,
+  breakCountdown: 5,
+  currentRound: 1,
+  totalRounds: 3,
+  currentPlayer: 1,
+  
+  player1: createInitialPlayerState(1),
+  player2: createInitialPlayerState(2),
+  
+  selectedScale: SCALES[0],
+  octaves: 2,
+  rootNote: 60,
+  scaleNotes: [],
+  
+  rounds: [],
+  currentRoundData: null,
+
+  setPlayerName: (player, name) => {
+    const key = player === 1 ? "player1" : "player2";
+    set(state => ({
+      [key]: { ...state[key], name },
+    }));
+  },
+
+  setPlayerReady: (player, ready) => {
+    const key = player === 1 ? "player1" : "player2";
+    set(state => ({
+      [key]: { ...state[key], ready },
+    }));
+    
+    const state = get();
+    if (state.player1.ready && state.player2.ready) {
+      get().startCountdown();
+    }
+  },
+
+  setSelectedScale: (scale) => {
+    set({ selectedScale: scale });
+  },
+
+  setOctaves: (octaves) => {
+    set({ octaves });
+  },
+
+  startCountdown: () => {
+    set({ phase: "countdown", countdown: 3 });
+    
+    const interval = setInterval(() => {
+      const current = get().countdown;
+      if (current > 1) {
+        set({ countdown: current - 1 });
+      } else {
+        clearInterval(interval);
+        get().startBattle();
+      }
+    }, 1000);
+  },
+
+  startBattle: () => {
+    get().generateRoundScale();
+    set({
+      phase: "playing",
+      currentRound: 1,
+      rounds: [],
+      player1: {
+        ...get().player1,
+        currentNoteIndex: 0,
+        correctNotes: 0,
+        wrongNotes: 0,
+        startTime: Date.now(),
+        durationMs: 0,
+        isTurn: true,
+      },
+      player2: {
+        ...get().player2,
+        currentNoteIndex: 0,
+        correctNotes: 0,
+        wrongNotes: 0,
+        startTime: 0,
+        durationMs: 0,
+        isTurn: false,
+      },
+      currentPlayer: 1,
+    });
+  },
+
+  generateRoundScale: () => {
+    const rootNoteOptions: number[] = [];
+    for (let i = 48; i <= 72; i++) {
+      if (![49, 51, 54, 56, 58, 61, 63, 66, 68, 70].includes(i)) {
+        rootNoteOptions.push(i);
+      }
+    }
+    const randomRoot = rootNoteOptions[Math.floor(Math.random() * rootNoteOptions.length)];
+    const notes = getScaleNotes(randomRoot, get().selectedScale, get().octaves);
+    
+    set({
+      rootNote: randomRoot,
+      scaleNotes: notes,
+    });
+  },
+
+  handleNotePlayed: (note) => {
+    const state = get();
+    if (state.phase !== "playing") return null;
+    
+    const playerKey = state.currentPlayer === 1 ? "player1" : "player2";
+    const player = state[playerKey];
+    const targetNote = state.scaleNotes[player.currentNoteIndex];
+    
+    if (note === targetNote) {
+      const newIndex = player.currentNoteIndex + 1;
+      const newCorrectNotes = player.correctNotes + 1;
+      
+      if (newIndex >= state.scaleNotes.length) {
+        const durationMs = Date.now() - player.startTime;
+        
+        set({
+          [playerKey]: {
+            ...player,
+            currentNoteIndex: newIndex,
+            correctNotes: newCorrectNotes,
+            durationMs,
+          },
+        });
+        
+        get().switchPlayer();
+        return "correct";
+      }
+      
+      set({
+        [playerKey]: {
+          ...player,
+          currentNoteIndex: newIndex,
+          correctNotes: newCorrectNotes,
+        },
+      });
+      
+      return "correct";
+    } else {
+      set({
+        [playerKey]: {
+          ...player,
+          wrongNotes: player.wrongNotes + 1,
+        },
+      });
+      
+      return "wrong";
+    }
+  },
+
+  switchPlayer: () => {
+    const state = get();
+    
+    if (state.currentPlayer === 1) {
+      set({
+        currentPlayer: 2,
+        player1: { ...state.player1, isTurn: false },
+        player2: { 
+          ...state.player2, 
+          isTurn: true, 
+          startTime: Date.now(),
+          currentNoteIndex: 0,
+          correctNotes: 0,
+          wrongNotes: 0,
+        },
+      });
+    } else {
+      get().finishRound();
+    }
+  },
+
+  finishRound: () => {
+    const state = get();
+    
+    const p1Score = state.player1.durationMs + state.player1.wrongNotes * 1000;
+    const p2Score = state.player2.durationMs + state.player2.wrongNotes * 1000;
+    
+    let winner: string | null = null;
+    if (p1Score < p2Score) {
+      winner = state.player1.name;
+    } else if (p2Score < p1Score) {
+      winner = state.player2.name;
+    }
+    
+    const roundData: BattleRound = {
+      roundNumber: state.currentRound,
+      rootNote: state.rootNote,
+      p1DurationMs: state.player1.durationMs,
+      p1Errors: state.player1.wrongNotes,
+      p2DurationMs: state.player2.durationMs,
+      p2Errors: state.player2.wrongNotes,
+      winner,
+    };
+    
+    set({
+      phase: "roundBreak",
+      breakCountdown: 5,
+      rounds: [...state.rounds, roundData],
+      currentRoundData: roundData,
+    });
+    
+    if (state.currentRound >= state.totalRounds) {
+      setTimeout(() => {
+        set({ phase: "finished" });
+      }, 5000);
+    } else {
+      const interval = setInterval(() => {
+        const current = get().breakCountdown;
+        if (current > 1) {
+          set({ breakCountdown: current - 1 });
+        } else {
+          clearInterval(interval);
+          get().startNextRound();
+        }
+      }, 1000);
+    }
+  },
+
+  startNextRound: () => {
+    const state = get();
+    get().generateRoundScale();
+    
+    set({
+      phase: "playing",
+      currentRound: state.currentRound + 1,
+      currentPlayer: 1,
+      player1: {
+        ...state.player1,
+        currentNoteIndex: 0,
+        correctNotes: 0,
+        wrongNotes: 0,
+        startTime: Date.now(),
+        durationMs: 0,
+        isTurn: true,
+      },
+      player2: {
+        ...state.player2,
+        currentNoteIndex: 0,
+        correctNotes: 0,
+        wrongNotes: 0,
+        startTime: 0,
+        durationMs: 0,
+        isTurn: false,
+      },
+    });
+  },
+
+  finishBattle: () => {
+    const state = get();
+    
+    let p1Wins = 0;
+    let p2Wins = 0;
+    let totalP1Duration = 0;
+    let totalP2Duration = 0;
+    
+    for (const round of state.rounds) {
+      totalP1Duration += round.p1DurationMs;
+      totalP2Duration += round.p2DurationMs;
+      
+      if (round.winner === state.player1.name) {
+        p1Wins++;
+      } else if (round.winner === state.player2.name) {
+        p2Wins++;
+      }
+    }
+    
+    let winner: string;
+    if (p1Wins > p2Wins) {
+      winner = state.player1.name;
+    } else if (p2Wins > p1Wins) {
+      winner = state.player2.name;
+    } else {
+      winner = totalP1Duration < totalP2Duration ? state.player1.name : state.player2.name;
+    }
+    
+    const record: BattleRecord = {
+      player1Name: state.player1.name,
+      player2Name: state.player2.name,
+      scaleType: state.selectedScale.name,
+      octaves: state.octaves,
+      rounds: JSON.stringify(state.rounds),
+      p1Wins,
+      p2Wins,
+      winner,
+      totalDurationMs: totalP1Duration + totalP2Duration,
+      date: new Date().toISOString().split("T")[0],
+    };
+    
+    return record;
+  },
+
+  resetBattle: () => {
+    set({
+      phase: "lobby",
+      countdown: 3,
+      breakCountdown: 5,
+      currentRound: 1,
+      currentPlayer: 1,
+      player1: { ...createInitialPlayerState(1), name: get().player1.name },
+      player2: { ...createInitialPlayerState(2), name: get().player2.name },
+      rootNote: 60,
+      scaleNotes: [],
+      rounds: [],
+      currentRoundData: null,
+    });
+  },
+}));
