@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use parking_lot::Mutex;
-use rodio::{source::Source, OutputStream, OutputStreamHandle, Sink, Decoder};
+use rodio::{source::Source, OutputStream, OutputStreamHandle, Sink};
 use crate::models::{AdsrParams, SoundPreset};
 use crate::AppState;
 
@@ -10,7 +10,7 @@ const SAMPLE_RATE: u32 = 44100;
 const SAMPLING_ROOT_NOTES: [u8; 8] = [24, 36, 48, 60, 72, 84, 96, 108];
 
 struct PianoSample {
-    samples: Vec<f32>,
+    samples: Arc<Vec<f32>>,
     root_note: u8,
     sample_rate: u32,
 }
@@ -70,7 +70,7 @@ impl PianoSample {
         }
 
         Self {
-            samples,
+            samples: Arc::new(samples),
             root_note,
             sample_rate: SAMPLE_RATE,
         }
@@ -80,7 +80,7 @@ impl PianoSample {
         let pitch_ratio = note_to_freq(target_note) / note_to_freq(self.root_note);
         
         SampledNoteSource {
-            samples: &self.samples,
+            samples: Arc::clone(&self.samples),
             sample_rate: self.sample_rate,
             pitch_ratio,
             velocity_gain: 0.2 + velocity * 0.8,
@@ -94,8 +94,8 @@ impl PianoSample {
     }
 }
 
-struct SampledNoteSource<'a> {
-    samples: &'a [f32],
+struct SampledNoteSource {
+    samples: Arc<Vec<f32>>,
     sample_rate: u32,
     pitch_ratio: f32,
     velocity_gain: f32,
@@ -107,7 +107,7 @@ struct SampledNoteSource<'a> {
     adsr: AdsrParams,
 }
 
-impl<'a> SampledNoteSource<'a> {
+impl SampledNoteSource {
     fn adsr_gain(&mut self) -> f32 {
         let t = self.elapsed;
         let a = self.adsr.attack;
@@ -142,7 +142,7 @@ impl<'a> SampledNoteSource<'a> {
     }
 }
 
-impl<'a> Iterator for SampledNoteSource<'a> {
+impl Iterator for SampledNoteSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -175,7 +175,7 @@ impl<'a> Iterator for SampledNoteSource<'a> {
     }
 }
 
-impl<'a> Source for SampledNoteSource<'a> {
+impl Source for SampledNoteSource {
     fn current_frame_len(&self) -> Option<usize> {
         None
     }
@@ -367,7 +367,7 @@ impl AudioEngine {
 
         let notes = self.active_notes.clone();
         let adsr = self.adsr.clone();
-        let volume = self.volume;
+        let _volume = self.volume;
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis((adsr.release * 1200.0) as u64)).await;
             let mut active = notes.lock();

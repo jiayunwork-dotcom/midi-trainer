@@ -52,7 +52,14 @@ export const SCALES: ScaleData[] = [
 export function getScaleNotes(rootNote: number, scale: ScaleData, octaves = 1): number[] {
   const notes: number[] = [];
   for (let oct = 0; oct < octaves; oct++) {
-    const intervals = oct === 0 ? scale.intervals : scale.intervals.slice(1);
+    let intervals: number[];
+    if (oct === 0) {
+      intervals = scale.intervals;
+    } else if (oct < octaves - 1) {
+      intervals = scale.intervals.slice(1);
+    } else {
+      intervals = scale.intervals.slice(1, -1);
+    }
     for (const interval of intervals) {
       const note = rootNote + interval + oct * 12;
       if (note <= 108) {
@@ -61,7 +68,10 @@ export function getScaleNotes(rootNote: number, scale: ScaleData, octaves = 1): 
     }
   }
   if (octaves > 1) {
-    notes.push(rootNote + octaves * 12);
+    const finalNote = rootNote + octaves * 12;
+    if (finalNote <= 108) {
+      notes.push(finalNote);
+    }
   }
   return notes;
 }
