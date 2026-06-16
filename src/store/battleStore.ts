@@ -34,6 +34,7 @@ export interface BattleState {
   
   rounds: BattleRound[];
   currentRoundData: BattleRound | null;
+  finalRecord: BattleRecord | null;
   
   setPlayerName: (player: CurrentPlayer, name: string) => void;
   setPlayerReady: (player: CurrentPlayer, ready: boolean) => void;
@@ -49,7 +50,6 @@ export interface BattleState {
   finishRound: () => void;
   startNextRound: () => void;
   
-  finishBattle: () => BattleRecord;
   resetBattle: () => void;
 }
 
@@ -82,6 +82,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
   
   rounds: [],
   currentRoundData: null,
+  finalRecord: null,
 
   setPlayerName: (player, name) => {
     const key = player === 1 ? "player1" : "player2";
@@ -261,28 +262,77 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       winner,
     };
     
-    set({
-      phase: "roundBreak",
-      breakCountdown: 5,
-      rounds: [...state.rounds, roundData],
-      currentRoundData: roundData,
-    });
+    const newRounds = [...state.rounds, roundData];
+    const isLastRound = state.currentRound >= state.totalRounds;
     
-    if (state.currentRound >= state.totalRounds) {
-      setTimeout(() => {
-        set({ phase: "finished" });
-      }, 5000);
+    if (isLastRound) {
+      let p1Wins = 0;
+      let p2Wins = 0;
+      let totalP1Duration = 0;
+      let totalP2Duration = 0;
+      
+      for (const round of newRounds) {
+        totalP1Duration += round.p1DurationMs;
+        totalP2Duration += round.p2DurationMs;
+        
+        if (round.winner === state.player1.name) {
+          p1Wins++;
+        } else if (round.winner === state.player2.name) {
+          p2Wins++;
+        }
+      }
+      
+      let finalWinner: string;
+      if (p1Wins > p2Wins) {
+        finalWinner = state.player1.name;
+      } else if (p2Wins > p1Wins) {
+        finalWinner = state.player2.name;
+      } else {
+        finalWinner = totalP1Duration < totalP2Duration ? state.player1.name : state.player2.name;
+      }
+      
+      const finalRecord: BattleRecord = {
+        player1Name: state.player1.name,
+        player2Name: state.player2.name,
+        scaleType: state.selectedScale.name,
+        octaves: state.octaves,
+        rounds: JSON.stringify(newRounds),
+        p1Wins,
+        p2Wins,
+        winner: finalWinner,
+        totalDurationMs: totalP1Duration + totalP2Duration,
+        date: new Date().toISOString().split("T")[0],
+      };
+      
+      set({
+        phase: "roundBreak",
+        breakCountdown: 5,
+        rounds: newRounds,
+        currentRoundData: roundData,
+        finalRecord,
+      });
     } else {
-      const interval = setInterval(() => {
-        const current = get().breakCountdown;
-        if (current > 1) {
-          set({ breakCountdown: current - 1 });
+      set({
+        phase: "roundBreak",
+        breakCountdown: 5,
+        rounds: newRounds,
+        currentRoundData: roundData,
+      });
+    }
+    
+    const interval = setInterval(() => {
+      const current = get().breakCountdown;
+      if (current > 1) {
+        set({ breakCountdown: current - 1 });
+      } else {
+        clearInterval(interval);
+        if (isLastRound) {
+          set({ phase: "finished" });
         } else {
-          clearInterval(interval);
           get().startNextRound();
         }
-      }, 1000);
-    }
+      }
+    }, 1000);
   },
 
   startNextRound: () => {
@@ -314,50 +364,6 @@ export const useBattleStore = create<BattleState>((set, get) => ({
     });
   },
 
-  finishBattle: () => {
-    const state = get();
-    
-    let p1Wins = 0;
-    let p2Wins = 0;
-    let totalP1Duration = 0;
-    let totalP2Duration = 0;
-    
-    for (const round of state.rounds) {
-      totalP1Duration += round.p1DurationMs;
-      totalP2Duration += round.p2DurationMs;
-      
-      if (round.winner === state.player1.name) {
-        p1Wins++;
-      } else if (round.winner === state.player2.name) {
-        p2Wins++;
-      }
-    }
-    
-    let winner: string;
-    if (p1Wins > p2Wins) {
-      winner = state.player1.name;
-    } else if (p2Wins > p1Wins) {
-      winner = state.player2.name;
-    } else {
-      winner = totalP1Duration < totalP2Duration ? state.player1.name : state.player2.name;
-    }
-    
-    const record: BattleRecord = {
-      player1Name: state.player1.name,
-      player2Name: state.player2.name,
-      scaleType: state.selectedScale.name,
-      octaves: state.octaves,
-      rounds: JSON.stringify(state.rounds),
-      p1Wins,
-      p2Wins,
-      winner,
-      totalDurationMs: totalP1Duration + totalP2Duration,
-      date: new Date().toISOString().split("T")[0],
-    };
-    
-    return record;
-  },
-
   resetBattle: () => {
     set({
       phase: "lobby",
@@ -371,6 +377,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       scaleNotes: [],
       rounds: [],
       currentRoundData: null,
+      finalRecord: null,
     });
   },
 }));

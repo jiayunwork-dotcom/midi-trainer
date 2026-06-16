@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import VirtualKeyboard from "../components/VirtualKeyboard";
 import { SCALES, midiNoteToName, NOTE_NAMES } from "../utils/musicTheory";
 import { useAppStore, BattleRound } from "../store/appStore";
@@ -22,12 +22,12 @@ const Battle = () => {
     scaleNotes,
     rounds,
     currentRoundData,
+    finalRecord,
     setPlayerName,
     setPlayerReady,
     setSelectedScale,
     setOctaves,
     handleNotePlayed,
-    finishBattle,
     resetBattle,
   } = useBattleStore();
 
@@ -35,6 +35,7 @@ const Battle = () => {
   const [battleHistory, setBattleHistory] = useState<any[]>([]);
   const [celebrationVisible, setCelebrationVisible] = useState(false);
   const prevActiveNotesRef = useRef<Map<number, any>>(new Map());
+  const hasSavedRecordRef = useRef(false);
 
   useEffect(() => {
     loadBattleHistory(10).then(setBattleHistory);
@@ -60,14 +61,53 @@ const Battle = () => {
   }, [activeNotes, phase, handleNotePlayed]);
 
   useEffect(() => {
-    if (phase === "finished") {
+    if (phase === "finished" && finalRecord && !hasSavedRecordRef.current) {
+      hasSavedRecordRef.current = true;
       setCelebrationVisible(true);
-      const record = finishBattle();
-      saveBattleRecord(record).then(() => {
+      saveBattleRecord(finalRecord).then(() => {
         loadBattleHistory(10).then(setBattleHistory);
       });
     }
-  }, [phase, finishBattle, saveBattleRecord, loadBattleHistory]);
+    if (phase === "lobby") {
+      hasSavedRecordRef.current = false;
+    }
+  }, [phase, finalRecord, saveBattleRecord, loadBattleHistory]);
+
+  const finalStats = useMemo(() => {
+    if (!finalRecord) return null;
+    
+    let totalP1Duration = 0;
+    let totalP2Duration = 0;
+    let totalP1Errors = 0;
+    let totalP2Errors = 0;
+    
+    for (const round of rounds) {
+      totalP1Duration += round.p1DurationMs;
+      totalP2Duration += round.p2DurationMs;
+      totalP1Errors += round.p1Errors;
+      totalP2Errors += round.p2Errors;
+    }
+
+    return {
+      totalP1Duration,
+      totalP2Duration,
+      totalP1Errors,
+      totalP2Errors,
+      p1Wins: finalRecord.p1Wins,
+      p2Wins: finalRecord.p2Wins,
+      winner: finalRecord.winner,
+      isP1Winner: finalRecord.winner === player1.name,
+      isDraw: finalRecord.p1Wins === finalRecord.p2Wins,
+    };
+  }, [finalRecord, rounds, player1.name, player2.name]);
+
+  const confettiItems = useMemo(() => (
+    [...Array(50)].map(() => ({
+      left: `${Math.random() * 100}%`,
+      animationDelay: `${Math.random() * 3}s`,
+      background: ['#ff0', '#f0f', '#0ff', '#0f0', '#f00'][Math.floor(Math.random() * 5)]
+    }))
+  ), []);
 
   const getPlayerStats = (player: typeof player1) => {
     const totalNotes = player.correctNotes + player.wrongNotes;
@@ -323,19 +363,11 @@ const Battle = () => {
         <div className="round-result-card">
           <h2>第 {currentRound} 回合结束</h2>
           
-          {currentRound < totalRounds && (
-            <div className="break-countdown">
-              <span>下一回合将在</span>
-              <span className="countdown-big">{breakCountdown}</span>
-              <span>秒后开始</span>
-            </div>
-          )}
-          
-          {currentRound >= totalRounds && (
-            <div className="final-round-notice">
-              正在计算最终结果...
-            </div>
-          )}
+          <div className="break-countdown">
+            <span>{currentRound < totalRounds ? "下一回合将在" : "最终结果将在"}</span>
+            <span className="countdown-big">{breakCountdown}</span>
+            <span>秒后{currentRound < totalRounds ? "开始" : "揭晓"}</span>
+          </div>
 
           <div className="round-score-table">
             <div className="score-header">
@@ -381,39 +413,16 @@ const Battle = () => {
   };
 
   const FinishedScreen = () => {
-    const record = finishBattle();
-    
-    let p1Wins = 0;
-    let p2Wins = 0;
-    let totalP1Duration = 0;
-    let totalP2Duration = 0;
-    let totalP1Errors = 0;
-    let totalP2Errors = 0;
-    
-    for (const round of rounds) {
-      totalP1Duration += round.p1DurationMs;
-      totalP2Duration += round.p2DurationMs;
-      totalP1Errors += round.p1Errors;
-      totalP2Errors += round.p2Errors;
-      
-      if (round.winner === player1.name) p1Wins++;
-      else if (round.winner === player2.name) p2Wins++;
-    }
-
-    const isP1Winner = record.winner === player1.name;
-    const isDraw = p1Wins === p2Wins;
+    if (!finalStats || !finalRecord) return null;
+    const { totalP1Duration, totalP2Duration, totalP1Errors, totalP2Errors, p1Wins, p2Wins, winner, isP1Winner, isDraw } = finalStats;
 
     return (
       <div className="finished-screen">
         {celebrationVisible && (
           <div className="celebration-overlay">
             <div className="confetti-container">
-              {[...Array(50)].map((_, i) => (
-                <div key={i} className="confetti" style={{
-                  left: `${Math.random() * 100}%`,
-                  animationDelay: `${Math.random() * 3}s`,
-                  background: ['#ff0', '#f0f', '#0ff', '#0f0', '#f00'][Math.floor(Math.random() * 5)]
-                }} />
+              {confettiItems.map((item, i) => (
+                <div key={i} className="confetti" style={item} />
               ))}
             </div>
           </div>
@@ -423,7 +432,7 @@ const Battle = () => {
           <div className="result-header">
             <h1 className="result-title">
               {isP1Winner ? "🎉 " : "💪 "}
-              {record.winner} 获胜！
+              {winner} 获胜！
               {!isP1Winner ? " 🎉" : " 💪"}
             </h1>
             <p className="result-subtitle">
@@ -489,7 +498,7 @@ const Battle = () => {
                   <td className={totalP1Errors > 0 ? "text-error" : ""}><strong>{totalP1Errors}</strong></td>
                   <td><strong>{(totalP2Duration / 1000).toFixed(2)}s</strong></td>
                   <td className={totalP2Errors > 0 ? "text-error" : ""}><strong>{totalP2Errors}</strong></td>
-                  <td><strong>{record.winner}</strong></td>
+                  <td><strong>{winner}</strong></td>
                 </tr>
               </tfoot>
             </table>
