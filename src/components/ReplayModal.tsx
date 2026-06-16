@@ -96,7 +96,7 @@ const ReplayModal = ({ round, player1Name, player2Name, onClose }: ReplayModalPr
     }
     
     setIsPlaying(true);
-    startTimeRef.current = performance.now() - pausedTimeRef.current * speed;
+    startTimeRef.current = performance.now() - pausedTimeRef.current / speed;
   };
 
   const pause = () => {
@@ -119,7 +119,7 @@ const ReplayModal = ({ round, player1Name, player2Name, onClose }: ReplayModalPr
     if (!isPlaying) return;
 
     const animate = (now: number) => {
-      const elapsed = (now - startTimeRef.current) / speed;
+      const elapsed = (now - startTimeRef.current) * speed;
       const clampedTime = Math.min(elapsed, totalDuration);
       
       setCurrentTime(clampedTime);

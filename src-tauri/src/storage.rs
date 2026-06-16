@@ -401,35 +401,33 @@ impl Storage {
                 player_name,
                 COUNT(*) as total_games,
                 SUM(CASE WHEN winner = player_name THEN 1 ELSE 0 END) as wins,
-                SUM(total_duration_ms) as total_duration,
-                SUM(p1_errors + p2_errors) as total_errors,
-                SUM(round_count) as total_rounds
+                SUM(total_duration_ms / 2.0) as total_player_duration,
+                SUM(CASE 
+                    WHEN p1_wins + p2_wins < 3 THEN 3 
+                    ELSE p1_wins + p2_wins 
+                END) as total_rounds
              FROM (
                  SELECT 
                      player1_name as player_name,
                      winner,
                      total_duration_ms,
-                     p1_errors,
-                     p2_errors,
-                     (p1_wins + p2_wins) as round_count,
-                     created_at
+                     p1_wins,
+                     p2_wins
                  FROM battle_records
                  UNION ALL
                  SELECT 
                      player2_name as player_name,
                      winner,
                      total_duration_ms,
-                     p1_errors,
-                     p2_errors,
-                     (p1_wins + p2_wins) as round_count,
-                     created_at
+                     p1_wins,
+                     p2_wins
                  FROM battle_records
              ) AS player_stats
              GROUP BY player_name
              ORDER BY 
                 (wins * 1.0 / COUNT(*)) DESC,
                 COUNT(*) DESC,
-                total_duration ASC
+                total_player_duration ASC
              LIMIT ?1",
         )?;
         
@@ -437,9 +435,8 @@ impl Storage {
             let player_name: String = row.get(0)?;
             let total_games: u32 = row.get(1)?;
             let wins: u32 = row.get(2)?;
-            let total_duration: i64 = row.get(3)?;
-            let total_errors: i64 = row.get(4)?;
-            let total_rounds: i64 = row.get(5)?;
+            let total_player_duration: f64 = row.get(3)?;
+            let total_rounds: i64 = row.get(4)?;
             
             let win_rate = if total_games > 0 {
                 wins as f64 / total_games as f64
@@ -448,15 +445,9 @@ impl Storage {
             };
             
             let avg_duration_per_round_ms = if total_rounds > 0 {
-                (total_duration as f64 / total_rounds as f64) as u64
+                (total_player_duration / total_rounds as f64) as u64
             } else {
                 0
-            };
-            
-            let avg_errors_per_round = if total_rounds > 0 {
-                total_errors as f64 / total_rounds as f64
-            } else {
-                0.0
             };
             
             Ok(LeaderboardEntry {
@@ -466,7 +457,7 @@ impl Storage {
                 wins,
                 win_rate,
                 avg_duration_per_round_ms,
-                avg_errors_per_round,
+                avg_errors_per_round: 0.0,
             })
         })?;
         
