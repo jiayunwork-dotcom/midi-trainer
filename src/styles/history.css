@@ -1,0 +1,73 @@
+.history-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.history-layout {
+  display: flex;
+  gap: 24px;
+}
+
+.history-sidebar {
+  width: 300px;
+  flex-shrink: 0;
+}
+
+.history-main {
+  flex: 1;
+}
+
+.calendar-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.calendar-day.empty {
+  background: transparent;
+}
+
+.calendar-day {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.calendar-day:hover:not(.empty) {
+  transform: scale(1.1);
+}
+
+.day-summary {
+  display: flex;
+  justify-content: space-around;
+  padding: 16px 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.day-stat {
+  text-align: center;
+}
+
+.day-stat-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
+.day-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.empty-history {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+}
+
+.empty-history p:first-child {
+  font-size: 16px;
+  margin-bottom: 8px;
+}

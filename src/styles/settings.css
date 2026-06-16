@@ -1,0 +1,22 @@
+.settings-page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.about-info {
+  line-height: 1.6;
+}
+
+.about-info p {
+  margin-bottom: 4px;
+}

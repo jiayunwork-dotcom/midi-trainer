@@ -1,0 +1,113 @@
+.virtual-keyboard {
+  width: 100%;
+  position: relative;
+  user-select: none;
+}
+
+.keyboard-keys {
+  position: relative;
+  height: 150px;
+  width: 100%;
+}
+
+.white-key {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(to bottom, #fafafa, #e8e8e8);
+  border: 1px solid #ccc;
+  border-radius: 0 0 6px 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding-bottom: 12px;
+  transition: background 0.05s ease;
+  z-index: 1;
+}
+
+.white-key:hover {
+  background: linear-gradient(to bottom, #f0f0ff, #e0e0f0);
+}
+
+.white-key.active {
+  background: linear-gradient(to bottom, #b0b0ff, #9090e0);
+}
+
+.white-key.highlighted {
+  background: linear-gradient(to bottom, #90EE90, #32CD32);
+}
+
+.white-key.target {
+  animation: targetBlink 0.5s ease-in-out infinite alternate;
+}
+
+.white-key .octave-label {
+  position: absolute;
+  top: 8px;
+  font-size: 10px;
+  color: #888;
+  font-weight: 600;
+}
+
+.white-key .note-name {
+  font-size: 11px;
+  color: #666;
+  font-weight: 500;
+}
+
+.black-key {
+  position: absolute;
+  top: 0;
+  height: 60%;
+  background: linear-gradient(to bottom, #2a2a3a, #1a1a2a);
+  border: 1px solid #000;
+  border-radius: 0 0 4px 4px;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.05s ease;
+}
+
+.black-key:hover {
+  background: linear-gradient(to bottom, #3a3a5a, #2a2a4a);
+}
+
+.black-key.active {
+  background: linear-gradient(to bottom, #6366f1, #4f46e5);
+}
+
+.black-key.highlighted {
+  background: linear-gradient(to bottom, #228B22, #006400);
+}
+
+.black-key.target {
+  animation: targetBlink 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes targetBlink {
+  from {
+    box-shadow: 0 0 5px var(--accent-warning), 0 0 10px var(--accent-warning);
+  }
+  to {
+    box-shadow: 0 0 15px var(--accent-warning), 0 0 25px var(--accent-warning);
+  }
+}
+
+.key-note-correct {
+  animation: correctFlash 0.3s ease-out;
+}
+
+.key-note-wrong {
+  animation: wrongFlash 0.3s ease-out;
+}
+
+@keyframes correctFlash {
+  0% { background: #10b981; }
+  100% { background: inherit; }
+}
+
+@keyframes wrongFlash {
+  0% { background: #ef4444; }
+  100% { background: inherit; }
+}
