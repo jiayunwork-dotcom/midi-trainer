@@ -5,6 +5,15 @@ import { useAppStore } from "../store/appStore";
 import "../styles/practice.css";
 
 type Direction = "ascending" | "descending" | "both";
+type PlaybackSpeed = 0.5 | 1 | 2;
+
+interface NoteRecord {
+  targetNote: number;
+  playedNote: number;
+  correct: boolean;
+  reactionTime: number;
+  timestamp: number;
+}
 
 interface PracticeStats {
   totalNotes: number;
@@ -16,7 +25,7 @@ interface PracticeStats {
 }
 
 const ScalePractice = () => {
-  const { activeNotes, savePracticeSession } = useAppStore();
+  const { activeNotes, savePracticeSession, noteOn: storeNoteOn, noteOff: storeNoteOff } = useAppStore();
   
   const [selectedScale, setSelectedScale] = useState(SCALES[0]);
   const [rootNote, setRootNote] = useState(60);
@@ -38,8 +47,15 @@ const ScalePractice = () => {
   });
   
   const [showResults, setShowResults] = useState(false);
+  const [noteRecords, setNoteRecords] = useState<NoteRecord[]>([]);
   const noteStartTimeRef = useRef<number>(0);
   const prevActiveNotesRef = useRef<Map<number, any>>(new Map());
+
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [replayIndex, setReplayIndex] = useState(-1);
+  const [replaySpeed, setReplaySpeed] = useState<PlaybackSpeed>(1);
+  const replayTimerRef = useRef<number | null>(null);
+  const replayKeyboardNotesRef = useRef<Set<number>>(new Set());
 
   const generateScaleNotes = useCallback(() => {
     let notes = getScaleNotes(rootNote, selectedScale, octaves);
@@ -79,6 +95,17 @@ const ScalePractice = () => {
 
     const targetNote = scaleNotes[currentNoteIndex];
     const reactionTime = Date.now() - noteStartTimeRef.current;
+    const timestamp = Date.now();
+
+    const record: NoteRecord = {
+      targetNote,
+      playedNote: note,
+      correct: note === targetNote,
+      reactionTime,
+      timestamp,
+    };
+
+    setNoteRecords(prev => [...prev, record]);
 
     setStats(prev => ({
       ...prev,
@@ -117,6 +144,7 @@ const ScalePractice = () => {
     setIsPracticing(true);
     setCurrentNoteIndex(0);
     setShowResults(false);
+    setNoteRecords([]);
     setStats({
       totalNotes: 0,
       correctNotes: 0,
@@ -150,8 +178,77 @@ const ScalePractice = () => {
     });
   };
 
+  const startReplay = () => {
+    if (noteRecords.length === 0) return;
+    setIsReplaying(true);
+    setReplayIndex(-1);
+    replayKeyboardNotesRef.current = new Set();
+    
+    let index = 0;
+    const playNext = () => {
+      if (index >= noteRecords.length) {
+        stopReplay();
+        return;
+      }
+
+      const record = noteRecords[index];
+      setReplayIndex(index);
+      
+      for (const note of replayKeyboardNotesRef.current) {
+        storeNoteOff(note);
+      }
+      replayKeyboardNotesRef.current.clear();
+      
+      storeNoteOn(record.playedNote, 100);
+      replayKeyboardNotesRef.current.add(record.playedNote);
+      
+      const holdDuration = Math.max(300, record.reactionTime) / replaySpeed;
+      
+      setTimeout(() => {
+        for (const note of replayKeyboardNotesRef.current) {
+          storeNoteOff(note);
+        }
+        replayKeyboardNotesRef.current.clear();
+        
+        index++;
+        const gapDuration = 200 / replaySpeed;
+        replayTimerRef.current = window.setTimeout(playNext, gapDuration);
+      }, holdDuration);
+    };
+
+    const startDelay = 500;
+    replayTimerRef.current = window.setTimeout(playNext, startDelay);
+  };
+
+  const stopReplay = () => {
+    setIsReplaying(false);
+    setReplayIndex(-1);
+    
+    if (replayTimerRef.current) {
+      clearTimeout(replayTimerRef.current);
+      replayTimerRef.current = null;
+    }
+    
+    for (const note of replayKeyboardNotesRef.current) {
+      storeNoteOff(note);
+    }
+    replayKeyboardNotesRef.current.clear();
+  };
+
+  const toggleReplay = () => {
+    if (isReplaying) {
+      stopReplay();
+    } else {
+      startReplay();
+    }
+  };
+
   const highlightedNotes = scaleNotes;
-  const targetNote = isPracticing ? scaleNotes[currentNoteIndex] : null;
+  const targetNote = isPracticing 
+    ? scaleNotes[currentNoteIndex] 
+    : isReplaying && replayIndex >= 0 
+      ? noteRecords[replayIndex]?.targetNote 
+      : null;
 
   const accuracy = stats.totalNotes > 0 
     ? Math.round((stats.correctNotes / stats.totalNotes) * 100) 
@@ -313,7 +410,7 @@ const ScalePractice = () => {
           </div>
 
           {showResults && (
-            <div className="card results-card">
+            <div className="card results-card replay-card">
               <h3 className="card-title">练习结果</h3>
               <div className="results-grid grid grid-3">
                 <div className="result-item">
@@ -335,6 +432,96 @@ const ScalePractice = () => {
                 <p>正确: {stats.correctNotes} 个</p>
                 <p>错误: {stats.wrongNotes} 个</p>
                 <p>总计: {stats.totalNotes} 个</p>
+              </div>
+
+              <div className="replay-section">
+                <h4 className="replay-title">练习复盘回放</h4>
+                
+                <div className="replay-controls">
+                  <button 
+                    className="btn btn-primary replay-play-btn"
+                    onClick={toggleReplay}
+                  >
+                    {isReplaying ? "⏸ 暂停" : "▶ 播放回放"}
+                  </button>
+                  
+                  <div className="replay-speed-control">
+                    <span className="speed-label">速度:</span>
+                    <div className="speed-buttons">
+                      {([0.5, 1, 2] as PlaybackSpeed[]).map(speed => (
+                        <button
+                          key={speed}
+                          className={`speed-btn ${replaySpeed === speed ? "active" : ""}`}
+                          onClick={() => setReplaySpeed(speed)}
+                          disabled={isReplaying}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="replay-timeline">
+                  <div className="timeline-track">
+                    {noteRecords.map((record, index) => (
+                      <div
+                        key={index}
+                        className={`timeline-item ${record.correct ? "correct" : "wrong"} ${replayIndex === index ? "active" : ""}`}
+                        style={{ 
+                          left: `${(index / Math.max(noteRecords.length - 1, 1)) * 100}%`,
+                        }}
+                        title={`${midiNoteToName(record.playedNote)} - ${record.correct ? "正确" : "错误"} - ${record.reactionTime}ms`}
+                      >
+                        <div className="timeline-dot" />
+                        <div className="timeline-tooltip">
+                          <div className="tooltip-note">
+                            {midiNoteToName(record.targetNote)}
+                          </div>
+                          <div className={`tooltip-result ${record.correct ? "text-success" : "text-error"}`}>
+                            {record.correct ? "✓ 正确" : "✗ 错误"}
+                          </div>
+                          {!record.correct && (
+                            <div className="tooltip-compare">
+                              <span>实际: {midiNoteToName(record.playedNote)}</span>
+                            </div>
+                          )}
+                          <div className="tooltip-time">
+                            {record.reactionTime}ms
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="replay-details">
+                  <div className="replay-detail-header">
+                    <span>序号</span>
+                    <span>目标音</span>
+                    <span>弹奏音</span>
+                    <span>结果</span>
+                    <span>反应时间</span>
+                  </div>
+                  <div className="replay-detail-list">
+                    {noteRecords.map((record, index) => (
+                      <div 
+                        key={index} 
+                        className={`replay-detail-item ${record.correct ? "" : "wrong"} ${replayIndex === index ? "active" : ""}`}
+                      >
+                        <span className="detail-index">{index + 1}</span>
+                        <span className="detail-target">{midiNoteToName(record.targetNote)}</span>
+                        <span className={`detail-played ${record.correct ? "" : "text-error"}`}>
+                          {midiNoteToName(record.playedNote)}
+                        </span>
+                        <span className={`detail-result ${record.correct ? "text-success" : "text-error"}`}>
+                          {record.correct ? "✓" : "✗"}
+                        </span>
+                        <span className="detail-time">{record.reactionTime}ms</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           )}

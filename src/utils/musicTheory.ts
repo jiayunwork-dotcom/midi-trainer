@@ -142,3 +142,48 @@ export function freqToMidi(freq: number): number {
 export function midiToFreq(note: number): number {
   return 440 * Math.pow(2, (note - 69) / 12);
 }
+
+export const CHORD_PROGRESSIONS = [
+  { name: "I-V-vi-IV", nameCn: "流行经典进行", degrees: [0, 4, 5, 3], types: ["major", "major", "minor", "major"] },
+  { name: "ii-V-I", nameCn: "爵士经典进行", degrees: [2, 4, 0], types: ["minor", "dominant_7th", "major_7th"] },
+  { name: "I-IV-V-I", nameCn: "古典进行", degrees: [0, 3, 4, 0], types: ["major", "major", "major", "major"] },
+  { name: "I-vi-IV-V", nameCn: "50年代进行", degrees: [0, 5, 3, 4], types: ["major", "minor", "major", "major"] },
+  { name: "vi-IV-I-V", nameCn: "伤感进行", degrees: [5, 3, 0, 4], types: ["minor", "major", "major", "major"] },
+  { name: "I-ii-IV-V", nameCn: "抒情进行", degrees: [0, 2, 3, 4], types: ["major", "minor", "major", "major"] },
+  { name: "I-V-vi-iii-IV-I-ii-V", nameCn: "卡农进行", degrees: [0, 4, 5, 2, 3, 0, 2, 4], types: ["major", "major", "minor", "minor", "major", "major", "minor", "major"] },
+  { name: "i-iv-v-i", nameCn: "小调进行", degrees: [0, 3, 4, 0], types: ["minor", "minor", "minor", "minor"] },
+];
+
+export const KEY_SIGNATURES = [
+  { name: "C", midi: 60, type: "major" as const, nameCn: "C大调" },
+  { name: "G", midi: 67, type: "major" as const, nameCn: "G大调" },
+  { name: "D", midi: 62, type: "major" as const, nameCn: "D大调" },
+  { name: "A", midi: 69, type: "major" as const, nameCn: "A大调" },
+  { name: "E", midi: 64, type: "major" as const, nameCn: "E大调" },
+  { name: "F", midi: 65, type: "major" as const, nameCn: "F大调" },
+  { name: "Bb", midi: 70, type: "major" as const, nameCn: "降B大调" },
+  { name: "Eb", midi: 63, type: "major" as const, nameCn: "降E大调" },
+  { name: "Am", midi: 69, type: "minor" as const, nameCn: "a小调" },
+  { name: "Em", midi: 64, type: "minor" as const, nameCn: "e小调" },
+  { name: "Dm", midi: 62, type: "minor" as const, nameCn: "d小调" },
+  { name: "Bm", midi: 71, type: "minor" as const, nameCn: "b小调" },
+];
+
+export function getProgressionChords(
+  keyRoot: number, 
+  progression: typeof CHORD_PROGRESSIONS[0],
+  isMinorKey: boolean
+): { chord: ChordData; root: number }[] {
+  const majorScaleIntervals = [0, 2, 4, 5, 7, 9, 11];
+  const minorScaleIntervals = [0, 2, 3, 5, 7, 8, 10];
+  
+  const scaleIntervals = isMinorKey ? minorScaleIntervals : majorScaleIntervals;
+  
+  return progression.degrees.map((degree, index) => {
+    const interval = scaleIntervals[degree];
+    const root = keyRoot + interval;
+    const chordType = progression.types[index];
+    const chord = CHORDS.find(c => c.name === chordType) || CHORDS[0];
+    return { chord, root };
+  });
+}

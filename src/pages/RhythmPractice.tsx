@@ -33,13 +33,16 @@ const RhythmPractice = () => {
   const totalBeatsRef = useRef(0);
   const hitIndexRef = useRef(0);
 
+  const [accentBeats, setAccentBeats] = useState<number[]>([0]);
+
   const getBeatDuration = useCallback(() => {
     return 60000 / bpm;
   }, [bpm]);
 
   const playClick = useCallback((isAccent: boolean) => {
-    const freq = isAccent ? 1000 : 800;
-    const duration = 0.05;
+    const freq = isAccent ? 600 : 800;
+    const volume = isAccent ? 0.5 : 0.3;
+    const duration = isAccent ? 0.08 : 0.05;
     
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
@@ -49,9 +52,9 @@ const RhythmPractice = () => {
     gainNode.connect(audioContext.destination);
     
     oscillator.frequency.value = freq;
-    oscillator.type = "sine";
+    oscillator.type = isAccent ? "triangle" : "sine";
     
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration);
     
     oscillator.start(audioContext.currentTime);
@@ -71,9 +74,10 @@ const RhythmPractice = () => {
     let beat = 0;
     
     const tick = () => {
-      const isFirst = beat % timeSignature.beats === 0;
-      playClick(isFirst);
-      setCurrentBeat(beat % timeSignature.beats);
+      const beatInMeasure = beat % timeSignature.beats;
+      const isAccent = accentBeats.includes(beatInMeasure);
+      playClick(isAccent);
+      setCurrentBeat(beatInMeasure);
       beatStartTimeRef.current = Date.now();
       beat++;
       totalBeatsRef.current = beat;
@@ -91,7 +95,24 @@ const RhythmPractice = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isPlaying, bpm, timeSignature, playClick, isPracticing]);
+  }, [isPlaying, bpm, timeSignature, playClick, isPracticing, accentBeats]);
+
+  const toggleAccentBeat = (beatIndex: number) => {
+    if (isPracticing || isPlaying) return;
+    
+    setAccentBeats(prev => {
+      if (prev.includes(beatIndex)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(b => b !== beatIndex);
+      } else {
+        return [...prev, beatIndex].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  useEffect(() => {
+    setAccentBeats([0]);
+  }, [timeSignature]);
 
   useEffect(() => {
     if (!isPracticing || !isPlaying) return;
@@ -259,6 +280,24 @@ const RhythmPractice = () => {
             </div>
           </div>
 
+          <div className="card mb-4">
+            <h3 className="card-title">重音设置</h3>
+            <p className="text-sm text-secondary mb-3">点击选择重音拍（至少保留一个）</p>
+            <div className="accent-beat-selector">
+              {Array.from({ length: timeSignature.beats }).map((_, i) => (
+                <button
+                  key={i}
+                  className={`accent-beat-btn ${accentBeats.includes(i) ? "accent" : ""}`}
+                  onClick={() => toggleAccentBeat(i)}
+                  disabled={isPracticing || isPlaying}
+                >
+                  <div className={`beat-dot-preview ${accentBeats.includes(i) ? "accent" : ""}`} />
+                  <span className="beat-number">{i + 1}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <button 
               className={`btn flex-1 ${isPlaying ? "btn-warning" : "btn-primary"}`}
@@ -279,12 +318,16 @@ const RhythmPractice = () => {
         <div className="practice-main">
           <div className="card metronome-display">
             <div className="beat-indicator">
-              {Array.from({ length: timeSignature.beats }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`beat-dot ${i === 0 ? "first" : ""} ${currentBeat === i && isPlaying ? "active" : ""}`}
-                />
-              ))}
+              {Array.from({ length: timeSignature.beats }).map((_, i) => {
+                const isAccent = accentBeats.includes(i);
+                const isActive = currentBeat === i && isPlaying;
+                return (
+                  <div
+                    key={i}
+                    className={`beat-dot ${isAccent ? "accent" : ""} ${isActive ? "active" : ""}`}
+                  />
+                );
+              })}
             </div>
             
             {isPracticing && (

@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import VirtualKeyboard from "../components/VirtualKeyboard";
-import { CHORDS, getChordNotes, getInversionName, midiNoteToName, NOTE_NAMES } from "../utils/musicTheory";
+import { CHORDS, getChordNotes, getInversionName, midiNoteToName, NOTE_NAMES, CHORD_PROGRESSIONS, KEY_SIGNATURES, getProgressionChords } from "../utils/musicTheory";
 import { useAppStore } from "../store/appStore";
 import "../styles/practice.css";
 
-type ChordMode = "play" | "ear";
+type ChordMode = "play" | "ear" | "progression";
 
 const ChordPractice = () => {
   const { activeNotes, savePracticeSession, noteOn: storeNoteOn, noteOff: storeNoteOff } = useAppStore();
@@ -32,6 +32,12 @@ const ChordPractice = () => {
   const prevActiveCountRef = useRef(0);
   const chordStartTimeRef = useRef<number>(0);
 
+  const [selectedKey, setSelectedKey] = useState(KEY_SIGNATURES[0]);
+  const [selectedProgression, setSelectedProgression] = useState(CHORD_PROGRESSIONS[0]);
+  const [progressionChords, setProgressionChords] = useState<{ chord: typeof CHORDS[0]; root: number }[]>([]);
+  const [progressionErrors, setProgressionErrors] = useState(0);
+  const [progressionStartTime, setProgressionStartTime] = useState(0);
+
   const generatePracticeChords = useCallback(() => {
     const chords: typeof practiceChords = [];
     const roots = [60, 62, 64, 65, 67, 69, 71];
@@ -45,6 +51,12 @@ const ChordPractice = () => {
     
     setPracticeChords(chords);
   }, []);
+
+  useEffect(() => {
+    const isMinor = selectedKey.type === "minor";
+    const chords = getProgressionChords(selectedKey.midi, selectedProgression, isMinor);
+    setProgressionChords(chords);
+  }, [selectedKey, selectedProgression]);
 
   useEffect(() => {
     if (mode === "ear" && isPracticing && practiceChords.length > 0) {
@@ -84,6 +96,11 @@ const ChordPractice = () => {
   }, [activeNotes, isPracticing, mode, currentChordIndex, practiceChords]);
 
   const checkChord = () => {
+    if (mode === "progression") {
+      checkProgressionChord();
+      return;
+    }
+    
     if (practiceChords.length === 0) return;
     
     const current = practiceChords[currentChordIndex];
@@ -115,6 +132,75 @@ const ChordPractice = () => {
         pressedNotesRef.current = [];
       }, 500);
     }
+  };
+
+  const checkProgressionChord = () => {
+    if (progressionChords.length === 0) return;
+    
+    const current = progressionChords[currentChordIndex];
+    const targetNotes = getChordNotes(current.root, current.chord, 0);
+    const pressed = [...pressedNotesRef.current].sort((a, b) => a - b);
+    const targetSorted = [...targetNotes].sort((a, b) => a - b);
+    
+    const isCorrect = pressed.length === targetSorted.length && 
+      pressed.every((n, i) => n === targetSorted[i]);
+
+    if (isCorrect) {
+      setLastResult("correct");
+      
+      setTimeout(() => {
+        nextProgressionChord();
+      }, 500);
+    } else {
+      setLastResult("wrong");
+      setProgressionErrors(prev => prev + 1);
+      
+      setTimeout(() => {
+        setLastResult(null);
+        pressedNotesRef.current = [];
+      }, 500);
+    }
+  };
+
+  const nextProgressionChord = () => {
+    setLastResult(null);
+    pressedNotesRef.current = [];
+    
+    if (currentChordIndex < progressionChords.length - 1) {
+      setCurrentChordIndex(prev => prev + 1);
+    } else {
+      finishProgressionPractice();
+    }
+  };
+
+  const startProgressionPractice = () => {
+    setIsPracticing(true);
+    setCurrentChordIndex(0);
+    setShowResults(false);
+    setProgressionErrors(0);
+    setProgressionStartTime(Date.now());
+    pressedNotesRef.current = [];
+    setLastResult(null);
+  };
+
+  const finishProgressionPractice = () => {
+    setIsPracticing(false);
+    setShowResults(true);
+    
+    const durationSecs = Math.floor((Date.now() - progressionStartTime) / 1000);
+    
+    savePracticeSession({
+      module_type: "chord_progression",
+      duration_secs: durationSecs,
+      accuracy: progressionErrors === 0 ? 1 : 0.5,
+      date: new Date().toISOString().split("T")[0],
+      details: JSON.stringify({
+        progression: selectedProgression.name,
+        key: selectedKey.name,
+        errors: progressionErrors,
+        duration: durationSecs,
+      }),
+    });
   };
 
   const nextChord = () => {
@@ -178,6 +264,11 @@ const ChordPractice = () => {
   };
 
   const startPractice = () => {
+    if (mode === "progression") {
+      startProgressionPractice();
+      return;
+    }
+    
     generatePracticeChords();
     setIsPracticing(true);
     setCurrentChordIndex(0);
@@ -226,7 +317,11 @@ const ChordPractice = () => {
     ? currentChordData 
     : { chord: selectedChord, root: rootNote, inversion };
 
-  const highlightedNotes = getChordNotes(displayChord.root, displayChord.chord, displayChord.inversion);
+  const currentProgressionChord = progressionChords[currentChordIndex];
+  
+  const highlightedNotes = mode === "progression" && currentProgressionChord
+    ? getChordNotes(currentProgressionChord.root, currentProgressionChord.chord, 0)
+    : getChordNotes(displayChord.root, displayChord.chord, displayChord.inversion);
   
   const accuracy = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
 
@@ -248,23 +343,32 @@ const ChordPractice = () => {
         <div className="practice-sidebar">
           <div className="card mb-4">
             <h3 className="card-title">练习模式</h3>
-            <div className="mode-tabs">
+            <div className="mode-tabs mode-tabs-3">
               <button 
                 className={`mode-tab ${mode === "play" ? "active" : ""}`}
                 onClick={() => setMode("play")}
+                disabled={isPracticing}
               >
                 弹奏模式
               </button>
               <button 
                 className={`mode-tab ${mode === "ear" ? "active" : ""}`}
                 onClick={() => setMode("ear")}
+                disabled={isPracticing}
               >
                 听辨模式
+              </button>
+              <button 
+                className={`mode-tab ${mode === "progression" ? "active" : ""}`}
+                onClick={() => setMode("progression")}
+                disabled={isPracticing}
+              >
+                进行练习
               </button>
             </div>
           </div>
 
-          {!isPracticing && (
+          {!isPracticing && mode !== "progression" && (
             <>
               <div className="card mb-4">
                 <h3 className="card-title">和弦类型</h3>
@@ -315,9 +419,47 @@ const ChordPractice = () => {
             </>
           )}
 
+          {!isPracticing && mode === "progression" && (
+            <>
+              <div className="card mb-4">
+                <h3 className="card-title">选择调性</h3>
+                <div className="key-selector">
+                  {KEY_SIGNATURES.map((key) => (
+                    <button
+                      key={key.name}
+                      className={`key-btn ${selectedKey.name === key.name ? "selected" : ""}`}
+                      onClick={() => setSelectedKey(key)}
+                    >
+                      {key.nameCn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card mb-4">
+                <h3 className="card-title">和弦进行</h3>
+                <div className="progression-list">
+                  {CHORD_PROGRESSIONS.map((prog) => (
+                    <button
+                      key={prog.name}
+                      className={`progression-item ${selectedProgression.name === prog.name ? "active" : ""}`}
+                      onClick={() => setSelectedProgression(prog)}
+                    >
+                      <div className="progression-name">{prog.name}</div>
+                      <div className="progression-name-cn">{prog.nameCn}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
           <button 
             className="btn btn-primary w-full"
-            onClick={isPracticing ? finishPractice : startPractice}
+            onClick={isPracticing 
+              ? (mode === "progression" ? finishProgressionPractice : finishPractice) 
+              : startPractice
+            }
           >
             {isPracticing ? "结束练习" : "开始练习"}
           </button>
@@ -325,7 +467,52 @@ const ChordPractice = () => {
 
         <div className="practice-main">
           <div className={`card practice-display ${lastResult || ""}`}>
-            {isPracticing && mode === "ear" ? (
+            {isPracticing && mode === "progression" ? (
+              <div className="chord-display">
+                <div className="chord-name">
+                  {NOTE_NAMES[currentProgressionChord?.root % 12]} {currentProgressionChord?.chord.nameCn}
+                </div>
+                <div className="chord-notes">
+                  组成音: {currentProgressionChord 
+                    ? getChordNotes(currentProgressionChord.root, currentProgressionChord.chord, 0)
+                        .map(n => midiNoteToName(n)).join(" - ")
+                    : "-"}
+                </div>
+                
+                <div className="progression-track mt-6">
+                  {progressionChords.map((chord, index) => (
+                    <div
+                      key={index}
+                      className={`progression-step 
+                        ${index < currentChordIndex ? "completed" : ""} 
+                        ${index === currentChordIndex ? "current" : ""}
+                        ${index < currentChordIndex || index === currentChordIndex ? "has-error" : ""}
+                      `}
+                    >
+                      <div className={`step-circle ${index < currentChordIndex ? "done" : ""} ${index === currentChordIndex ? "active" : ""}`}>
+                        {index < currentChordIndex ? "✓" : index + 1}
+                      </div>
+                      <div className="step-name">
+                        {NOTE_NAMES[chord.root % 12]}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {lastResult === "correct" && (
+                  <div className="result-indicator correct mt-4">✓ 正确！</div>
+                )}
+                {lastResult === "wrong" && (
+                  <div className="result-indicator wrong mt-4">✗ 再试试</div>
+                )}
+                
+                <div className="mt-4">
+                  <span className="info-label">
+                    进度: {currentChordIndex + (lastResult === "correct" ? 0 : 1)} / {progressionChords.length}
+                  </span>
+                </div>
+              </div>
+            ) : isPracticing && mode === "ear" ? (
               <div className="chord-display">
                 <div className="chord-name">听辨和弦</div>
                 <div className="chord-notes mb-4">
@@ -385,20 +572,39 @@ const ChordPractice = () => {
             )}
 
             <div className="practice-info mt-6">
-              <div className="info-item">
-                <span className="info-label">正确率</span>
-                <span className={`info-value ${accuracy >= 80 ? "text-success" : accuracy >= 60 ? "text-warning" : "text-error"}`}>
-                  {accuracy}%
-                </span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">正确</span>
-                <span className="info-value text-success">{stats.correct}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">错误</span>
-                <span className="info-value text-error">{stats.wrong}</span>
-              </div>
+              {mode === "progression" ? (
+                <>
+                  <div className="info-item">
+                    <span className="info-label">错误次数</span>
+                    <span className={`info-value ${progressionErrors === 0 ? "text-success" : progressionErrors <= 2 ? "text-warning" : "text-error"}`}>
+                      {progressionErrors}
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">当前和弦</span>
+                    <span className="info-value">
+                      {currentChordIndex + 1} / {progressionChords.length}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="info-item">
+                    <span className="info-label">正确率</span>
+                    <span className={`info-value ${accuracy >= 80 ? "text-success" : accuracy >= 60 ? "text-warning" : "text-error"}`}>
+                      {accuracy}%
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">正确</span>
+                    <span className="info-value text-success">{stats.correct}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">错误</span>
+                    <span className="info-value text-error">{stats.wrong}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -414,20 +620,44 @@ const ChordPractice = () => {
           {showResults && (
             <div className="card results-card">
               <h3 className="card-title">练习结果</h3>
-              <div className="results-grid grid grid-3">
-                <div className="result-item">
-                  <div className="result-value">{accuracy}%</div>
-                  <div className="result-label">正确率</div>
+              {mode === "progression" ? (
+                <div className="progression-results">
+                  <div className="results-grid grid grid-2">
+                    <div className="result-item">
+                      <div className="result-value">
+                        {Math.floor((Date.now() - progressionStartTime) / 1000)}s
+                      </div>
+                      <div className="result-label">总用时</div>
+                    </div>
+                    <div className="result-item">
+                      <div className={`result-value ${progressionErrors === 0 ? "text-success" : "text-error"}`}>
+                        {progressionErrors}
+                      </div>
+                      <div className="result-label">错误次数</div>
+                    </div>
+                  </div>
+                  <div className="progression-summary">
+                    <p>调性: {selectedKey.nameCn}</p>
+                    <p>进行: {selectedProgression.nameCn} ({selectedProgression.name})</p>
+                    <p>和弦数: {progressionChords.length} 个</p>
+                  </div>
                 </div>
-                <div className="result-item">
-                  <div className="result-value">{stats.correct}</div>
-                  <div className="result-label">正确</div>
+              ) : (
+                <div className="results-grid grid grid-3">
+                  <div className="result-item">
+                    <div className="result-value">{accuracy}%</div>
+                    <div className="result-label">正确率</div>
+                  </div>
+                  <div className="result-item">
+                    <div className="result-value">{stats.correct}</div>
+                    <div className="result-label">正确</div>
+                  </div>
+                  <div className="result-item">
+                    <div className="result-value">{stats.wrong}</div>
+                    <div className="result-label">错误</div>
+                  </div>
                 </div>
-                <div className="result-item">
-                  <div className="result-value">{stats.wrong}</div>
-                  <div className="result-label">错误</div>
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
