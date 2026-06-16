@@ -4,10 +4,6 @@ use chrono::{Duration, Local, NaiveDate, Datelike};
 use dirs::data_dir;
 use crate::models::{Achievement, PracticeSession, WeeklyStats};
 use crate::AppState;
-use std::sync::Mutex;
-use serde_json::json;
-
-static DB_INIT: Mutex<bool> = Mutex::new(false);
 
 pub struct Storage {
     db_path: PathBuf,
@@ -75,21 +71,21 @@ impl Storage {
 
     fn init_achievements(conn: &rusqlite::Connection) -> Result<()> {
         let achievements = vec![
-            ("streak_7", "持之以恒", "连续练习7天"),
-            ("scale_perfect", "完美音阶", "某个音阶练习正确率达到100%"),
-            ("all_major_scales", "大调大师", "完成所有大调音阶练习"),
-            ("rhythm_perfect", "节奏大师", "节奏练习Perfect率超过80%"),
+            ("streak_7", "持之以恒", "连续练习7�?),
+            ("scale_perfect", "完美音阶", "某个音阶练习正确率达�?00%"),
+            ("all_major_scales", "大调大师", "完成所有大调音阶练�?),
+            ("rhythm_perfect", "节奏大师", "节奏练习Perfect率超�?0%"),
             ("sight_reading_50", "视奏达人", "视奏训练连续50个音正确"),
-            ("first_practice", "初出茅庐", "完成第一次练习"),
+            ("first_practice", "初出茅庐", "完成第一次练�?),
             ("practice_10h", "勤学苦练", "累计练习时长达到10小时"),
             ("chord_master", "和弦达人", "掌握10种不同的和弦"),
-            ("all_minor_scales", "小调行家", "完成所有小调音阶练习"),
-            ("blues_master", "布鲁斯之王", "完成布鲁斯音阶练习"),
+            ("all_minor_scales", "小调行家", "完成所有小调音阶练�?),
+            ("blues_master", "布鲁斯之�?, "完成布鲁斯音阶练�?),
             ("pentatonic_master", "五声高手", "掌握五声音阶"),
-            ("modes_explorer", "调式探索者", "尝试所有教会调式"),
-            ("perfect_chord", "精准和弦", "某个和弦练习正确率100%"),
+            ("modes_explorer", "调式探索�?, "尝试所有教会调�?),
+            ("perfect_chord", "精准和弦", "某个和弦练习正确�?00%"),
             ("daily_goal", "目标达成", "完成每日练习目标"),
-            ("streak_30", "月度达人", "连续练习30天"),
+            ("streak_30", "月度达人", "连续练习30�?),
         ];
 
         for (id, name, desc) in achievements {
@@ -196,7 +192,7 @@ impl Storage {
             }
         }
         
-        let module_stmt = conn.prepare(
+        let mut module_stmt = conn.prepare(
             "SELECT module_type, AVG(accuracy) as avg_accuracy
              FROM practice_sessions
              WHERE date >= ?1
@@ -327,63 +323,63 @@ impl Storage {
 
 #[tauri::command]
 pub fn save_practice_session(state: tauri::State<AppState>, session: PracticeSession) -> Result<i64, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .save_session(session)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_practice_history(state: tauri::State<AppState>, limit: u32) -> Result<Vec<PracticeSession>, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .get_history(limit)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_weekly_stats(state: tauri::State<AppState>) -> Result<WeeklyStats, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .get_weekly_stats()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_streak(state: tauri::State<AppState>) -> Result<u32, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .get_streak()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_achievements(state: tauri::State<AppState>) -> Result<Vec<Achievement>, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .get_achievements()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn unlock_achievement(state: tauri::State<AppState>, id: String) -> Result<bool, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .unlock_achievement(&id)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_daily_goal(state: tauri::State<AppState>) -> Result<u32, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .get_daily_goal()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_daily_goal(state: tauri::State<AppState>, minutes: u32) -> Result<(), String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .set_daily_goal(minutes)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_today_practice_time(state: tauri::State<AppState>) -> Result<u32, String> {
-    state.storage.lock().unwrap()
+    state.storage.lock()
         .get_today_practice_time()
         .map_err(|e| e.to_string())
 }
