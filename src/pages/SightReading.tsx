@@ -1,21 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import VirtualKeyboard from "../components/VirtualKeyboard";
+import StaffNotation, { StaffNoteData } from "../components/StaffNotation";
 import { isBlackKey } from "../utils/musicTheory";
 import { useAppStore } from "../store/appStore";
 import "../styles/practice.css";
 import "../styles/sight-reading.css";
 
 type Difficulty = "beginner" | "easy" | "medium" | "hard";
-
-interface StaffNote {
-  id: number;
-  note: number;
-  x: number;
-  duration: number;
-  hit: boolean;
-  missed: boolean;
-  y: number;
-}
+type ClefType = "treble" | "bass" | "grand";
 
 interface HitResult {
   note: number;
@@ -28,8 +20,9 @@ const SightReading = () => {
   const { activeNotes, savePracticeSession } = useAppStore();
   
   const [difficulty, setDifficulty] = useState<Difficulty>("beginner");
+  const [clef, setClef] = useState<ClefType>("treble");
   const [isPracticing, setIsPracticing] = useState(false);
-  const [notes, setNotes] = useState<StaffNote[]>([]);
+  const [notes, setNotes] = useState<StaffNoteData[]>([]);
   const [score, setScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
@@ -57,46 +50,48 @@ const SightReading = () => {
         return {
           noteRange: [60, 72],
           hasSharps: false,
-          speed: 50,
-          spawnInterval: 1500,
+          speed: 45,
+          spawnInterval: 1800,
           noteDurations: [4, 2, 1],
           hasChords: false,
+          keySignature: 0,
+          hasDotted: false,
         };
       case "easy":
         return {
           noteRange: [55, 77],
           hasSharps: false,
-          speed: 70,
-          spawnInterval: 1200,
+          speed: 65,
+          spawnInterval: 1400,
           noteDurations: [2, 1, 0.5],
           hasChords: false,
+          keySignature: 0,
+          hasDotted: false,
         };
       case "medium":
         return {
           noteRange: [48, 84],
           hasSharps: true,
-          speed: 90,
-          spawnInterval: 1000,
+          speed: 85,
+          spawnInterval: 1100,
           noteDurations: [1, 0.5, 0.25],
           hasChords: false,
+          keySignature: Math.random() > 0.5 ? 1 : -1,
+          hasDotted: true,
         };
       case "hard":
         return {
           noteRange: [40, 88],
           hasSharps: true,
-          speed: 120,
-          spawnInterval: 800,
+          speed: 115,
+          spawnInterval: 900,
           noteDurations: [1, 0.5, 0.25],
           hasChords: true,
+          keySignature: Math.floor(Math.random() * 5) - 2,
+          hasDotted: true,
         };
     }
   }, [difficulty]);
-
-  const noteToY = useCallback((note: number) => {
-    const middleC = 60;
-    const halfStepHeight = 8;
-    return 50 - (note - middleC) * halfStepHeight;
-  }, []);
 
   const spawnNote = useCallback(() => {
     const settings = getDifficultySettings();
@@ -116,19 +111,21 @@ const SightReading = () => {
     const duration = settings.noteDurations[
       Math.floor(Math.random() * settings.noteDurations.length)
     ];
+    
+    const isDotted = settings.hasDotted && Math.random() > 0.7;
 
-    const newNote: StaffNote = {
+    const newNote: StaffNoteData = {
       id: noteIdRef.current++,
       note,
-      x: 110,
-      duration,
+      x: 115,
+      duration: isDotted ? duration * 1.5 : duration,
       hit: false,
       missed: false,
-      y: noteToY(note),
+      dotted: isDotted,
     };
 
     setNotes(prev => [...prev, newNote]);
-  }, [getDifficultySettings, noteToY]);
+  }, [getDifficultySettings]);
 
   useEffect(() => {
     if (!isPracticing) return;
@@ -191,13 +188,13 @@ const SightReading = () => {
       const judgeLine = 20;
       
       setNotes(prev => {
-        let hitNote: StaffNote | null = null;
+        let hitNote: StaffNoteData | null = null;
         let minDistance = Infinity;
 
         for (const n of prev) {
           if (!n.hit && !n.missed) {
             const distance = Math.abs(n.x - judgeLine);
-            if (distance < minDistance && distance < 15) {
+            if (distance < minDistance && distance < 18) {
               minDistance = distance;
               hitNote = n;
             }
@@ -231,6 +228,14 @@ const SightReading = () => {
 
             setScore(s => s + scoreAdd + Math.floor(combo * 5));
             setStats(s => ({ ...s, total: s.total + 1, correct: s.correct + 1 }));
+            
+            setLastResult({
+              note: noteNum,
+              timeDeviation,
+              pitchCorrect: true,
+              judgment,
+            });
+            setTimeout(() => setLastResult(null), 500);
 
             return prev.map(n => 
               n.id === hitNote!.id ? { ...n, hit: true } : n
@@ -315,6 +320,7 @@ const SightReading = () => {
   };
 
   const accuracy = stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
+  const settings = getDifficultySettings();
 
   const difficultyLevels = [
     { value: "beginner" as Difficulty, label: "初级" },
@@ -322,12 +328,18 @@ const SightReading = () => {
     { value: "medium" as Difficulty, label: "中等" },
     { value: "hard" as Difficulty, label: "困难" },
   ];
+  
+  const clefOptions = [
+    { value: "treble" as ClefType, label: "高音谱号", symbol: "𝄞" },
+    { value: "bass" as ClefType, label: "低音谱号", symbol: "𝄢" },
+    { value: "grand" as ClefType, label: "大谱表", symbol: "𝄞𝄢" },
+  ];
 
   return (
     <div className="practice-page">
       <div className="page-header">
         <h1 className="page-title">视奏训练</h1>
-        <p className="page-description">音符滚动到判定线时弹出对应的音</p>
+        <p className="page-description">音符从右向左滚动，到达判定线时弹出对应的音</p>
       </div>
 
       <div className="practice-layout">
@@ -343,6 +355,23 @@ const SightReading = () => {
                   disabled={isPracticing}
                 >
                   {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="card mb-4">
+            <h3 className="card-title">谱号选择</h3>
+            <div className="difficulty-selector">
+              {clefOptions.map((c) => (
+                <button
+                  key={c.value}
+                  className={`difficulty-btn ${clef === c.value ? "active" : ""}`}
+                  onClick={() => setClef(c.value)}
+                  disabled={isPracticing}
+                >
+                  <span style={{ fontSize: "18px", marginRight: "4px" }}>{c.symbol}</span>
+                  {c.label}
                 </button>
               ))}
             </div>
@@ -363,6 +392,19 @@ const SightReading = () => {
                 <label>正确率</label>
                 <div className="text-xl font-bold">{accuracy}%</div>
               </div>
+              <div className="setting-item">
+                <label>当前音符</label>
+                <div className="text-sm">
+                  {notes.filter(n => !n.hit && !n.missed && n.x < 35).map(n => {
+                    const noteNames = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+                    const octave = Math.floor(n.note / 12) - 1;
+                    const noteName = noteNames[n.note % 12];
+                    return <span key={n.id} className="inline-block bg-accent/20 px-2 py-1 rounded mr-1">
+                      {noteName}{octave}
+                    </span>;
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
@@ -376,49 +418,40 @@ const SightReading = () => {
 
         <div className="practice-main">
           <div className="card">
-            <div className="sight-reading-staff">
-              <div className="staff-lines">
-                {[0, 1, 2, 3, 4].map(i => (
-                  <div
-                    key={i}
-                    className="staff-line"
-                    style={{ top: `${30 + i * 12}%` }}
-                  />
-                ))}
-                <div className="clef treble">𝄞</div>
-                <div className="judgment-zone" />
-                
-                {notes.map(note => (
-                  <div
-                    key={note.id}
-                    className={`staff-note ${note.hit ? "hit" : note.missed ? "missed" : ""}`}
-                    style={{
-                      left: `${note.x}%`,
-                      top: `${note.y}%`,
-                    }}
-                  >
-                    {isBlackKey(note.note) ? "●" : "○"}
-                  </div>
-                ))}
+            <div className="staff-container">
+              <StaffNotation
+                notes={notes}
+                clef={clef}
+                width={880}
+                height={clef === "grand" ? 280 : 180}
+                judgmentLineX={20}
+                showKeySignature={true}
+                keySignature={settings.keySignature}
+              />
 
-                {lastResult && (
-                  <div className={`judgment-display ${lastResult.judgment.toLowerCase()}`}>
-                    {lastResult.judgment}
-                  </div>
-                )}
-              </div>
+              {lastResult && (
+                <div className={`judgment-display ${lastResult.judgment.toLowerCase()}`}>
+                  {lastResult.judgment}
+                  {lastResult.pitchCorrect && (
+                    <span className="ml-2 text-sm opacity-80">
+                      {lastResult.timeDeviation < 30 ? "±" : ""}{Math.round(lastResult.timeDeviation)}ms
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between text-sm text-secondary mt-2">
               <span>← 音符从右向左滚动</span>
-              <span>判定线 ↓</span>
+              <span>判定线 ↑</span>
+              <span>速度: {settings.speed}</span>
             </div>
           </div>
 
           <div className="keyboard-preview">
             <VirtualKeyboard
               activeNotes={activeNotes}
-              highlightedNotes={notes.filter(n => !n.hit && !n.missed && n.x < 30).map(n => n.note)}
+              highlightedNotes={notes.filter(n => !n.hit && !n.missed && n.x < 35).map(n => n.note)}
               startNote={36}
               endNote={88}
             />
@@ -445,6 +478,28 @@ const SightReading = () => {
                   <div className="result-label">总音符数</div>
                 </div>
               </div>
+              
+              <div className="card">
+                <h4 className="text-sm font-semibold mb-2 text-secondary">判定标准</h4>
+                <div className="grid grid-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-emerald-400"></span>
+                    <span>Perfect &lt;30ms</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-blue-400"></span>
+                    <span>Good &lt;80ms</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
+                    <span>OK &lt;150ms</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-red-400"></span>
+                    <span>Miss &gt;150ms</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -454,15 +509,19 @@ const SightReading = () => {
               <div className="tips-content">
                 <div className="tip-item">
                   <span className="tip-number">1</span>
-                  <p>音符从右向左滚动，到达判定线时弹出对应的音</p>
+                  <p>音符从右向左滚动，到达绿色判定线时弹出对应的音</p>
                 </div>
                 <div className="tip-item">
                   <span className="tip-number">2</span>
-                  <p>同时需要音高正确和时机准确才能得分</p>
+                  <p>同时需要<strong>音高正确</strong>和<strong>时机准确</strong>才能得分</p>
                 </div>
                 <div className="tip-item">
                   <span className="tip-number">3</span>
-                  <p>连击越高，额外加分越多</p>
+                  <p>判定等级：Perfect(&lt;30ms)、Good(&lt;80ms)、OK(&lt;150ms)、Miss</p>
+                </div>
+                <div className="tip-item">
+                  <span className="tip-number">4</span>
+                  <p>五线谱包含谱号、调号、升降号、附点等完整乐谱元素</p>
                 </div>
               </div>
             </div>

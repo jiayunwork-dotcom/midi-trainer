@@ -24,6 +24,7 @@ anyhow = "1"
 thiserror = "1"
 crossbeam-channel = "0.5"
 parking_lot = "0.12"
+tokio = { version = "1", features = ["full"] }
 
 [features]
 # 默认启用 custom-protocol 以改进开发体验
