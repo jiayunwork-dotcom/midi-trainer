@@ -351,10 +351,14 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       let p2Wins = 0;
       let totalP1Duration = 0;
       let totalP2Duration = 0;
+      let totalP1Errors = 0;
+      let totalP2Errors = 0;
       
       for (const round of newRounds) {
         totalP1Duration += round.p1DurationMs;
         totalP2Duration += round.p2DurationMs;
+        totalP1Errors += round.p1Errors;
+        totalP2Errors += round.p2Errors;
         
         if (round.winner === state.player1.name) {
           p1Wins++;
@@ -381,6 +385,10 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         rounds: JSON.stringify(newRounds),
         p1Wins,
         p2Wins,
+        p1TotalErrors: totalP1Errors,
+        p2TotalErrors: totalP2Errors,
+        p1TotalDurationMs: totalP1Duration,
+        p2TotalDurationMs: totalP2Duration,
         winner: finalWinner,
         totalDurationMs: totalP1Duration + totalP2Duration,
         date: new Date().toISOString().split("T")[0],

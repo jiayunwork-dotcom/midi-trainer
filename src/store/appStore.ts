@@ -67,6 +67,10 @@ export interface BattleRecord {
   rounds: string;
   p1Wins: number;
   p2Wins: number;
+  p1TotalErrors: number;
+  p2TotalErrors: number;
+  p1TotalDurationMs: number;
+  p2TotalDurationMs: number;
   winner: string;
   totalDurationMs: number;
   date: string;

@@ -74,6 +74,10 @@ impl Storage {
                 rounds TEXT NOT NULL,
                 p1_wins INTEGER NOT NULL DEFAULT 0,
                 p2_wins INTEGER NOT NULL DEFAULT 0,
+                p1_total_errors INTEGER NOT NULL DEFAULT 0,
+                p2_total_errors INTEGER NOT NULL DEFAULT 0,
+                p1_total_duration_ms INTEGER NOT NULL DEFAULT 0,
+                p2_total_duration_ms INTEGER NOT NULL DEFAULT 0,
                 winner TEXT NOT NULL,
                 total_duration_ms INTEGER NOT NULL,
                 date TEXT NOT NULL,
@@ -84,6 +88,22 @@ impl Storage {
 
         let _ = conn.execute(
             "ALTER TABLE battle_records ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'easy'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE battle_records ADD COLUMN p1_total_errors INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE battle_records ADD COLUMN p2_total_errors INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE battle_records ADD COLUMN p1_total_duration_ms INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE battle_records ADD COLUMN p2_total_duration_ms INTEGER NOT NULL DEFAULT 0",
             [],
         );
 
@@ -349,8 +369,10 @@ impl Storage {
         conn.execute(
             "INSERT INTO battle_records (
                 player1_name, player2_name, scale_type, octaves, difficulty, rounds,
-                p1_wins, p2_wins, winner, total_duration_ms, date
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                p1_wins, p2_wins, p1_total_errors, p2_total_errors,
+                p1_total_duration_ms, p2_total_duration_ms,
+                winner, total_duration_ms, date
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             [
                 &record.player1_name,
                 &record.player2_name,
@@ -360,6 +382,10 @@ impl Storage {
                 &record.rounds,
                 &record.p1_wins.to_string(),
                 &record.p2_wins.to_string(),
+                &record.p1_total_errors.to_string(),
+                &record.p2_total_errors.to_string(),
+                &record.p1_total_duration_ms.to_string(),
+                &record.p2_total_duration_ms.to_string(),
                 &record.winner,
                 &record.total_duration_ms.to_string(),
                 &record.date.format("%Y-%m-%d").to_string(),
@@ -401,26 +427,24 @@ impl Storage {
                 player_name,
                 COUNT(*) as total_games,
                 SUM(CASE WHEN winner = player_name THEN 1 ELSE 0 END) as wins,
-                SUM(total_duration_ms / 2.0) as total_player_duration,
-                SUM(CASE 
-                    WHEN p1_wins + p2_wins < 3 THEN 3 
-                    ELSE p1_wins + p2_wins 
-                END) as total_rounds
+                SUM(player_duration) as total_player_duration,
+                SUM(player_errors) as total_player_errors,
+                SUM(round_count) as total_rounds
              FROM (
                  SELECT 
                      player1_name as player_name,
                      winner,
-                     total_duration_ms,
-                     p1_wins,
-                     p2_wins
+                     p1_total_duration_ms as player_duration,
+                     p1_total_errors as player_errors,
+                     (p1_wins + p2_wins) as round_count
                  FROM battle_records
                  UNION ALL
                  SELECT 
                      player2_name as player_name,
                      winner,
-                     total_duration_ms,
-                     p1_wins,
-                     p2_wins
+                     p2_total_duration_ms as player_duration,
+                     p2_total_errors as player_errors,
+                     (p1_wins + p2_wins) as round_count
                  FROM battle_records
              ) AS player_stats
              GROUP BY player_name
@@ -435,8 +459,9 @@ impl Storage {
             let player_name: String = row.get(0)?;
             let total_games: u32 = row.get(1)?;
             let wins: u32 = row.get(2)?;
-            let total_player_duration: f64 = row.get(3)?;
-            let total_rounds: i64 = row.get(4)?;
+            let total_player_duration: i64 = row.get(3)?;
+            let total_player_errors: i64 = row.get(4)?;
+            let total_rounds: i64 = row.get(5)?;
             
             let win_rate = if total_games > 0 {
                 wins as f64 / total_games as f64
@@ -445,9 +470,15 @@ impl Storage {
             };
             
             let avg_duration_per_round_ms = if total_rounds > 0 {
-                (total_player_duration / total_rounds as f64) as u64
+                (total_player_duration as f64 / total_rounds as f64) as u64
             } else {
                 0
+            };
+            
+            let avg_errors_per_round = if total_rounds > 0 {
+                total_player_errors as f64 / total_rounds as f64
+            } else {
+                0.0
             };
             
             Ok(LeaderboardEntry {
@@ -457,7 +488,7 @@ impl Storage {
                 wins,
                 win_rate,
                 avg_duration_per_round_ms,
-                avg_errors_per_round: 0.0,
+                avg_errors_per_round,
             })
         })?;
         
