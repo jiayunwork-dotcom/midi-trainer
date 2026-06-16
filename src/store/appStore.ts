@@ -37,13 +37,23 @@ export interface WeeklyStats {
   module_accuracy: [string, number][];
 }
 
+export interface KeyEvent {
+  note: number;
+  targetNote: number;
+  isCorrect: boolean;
+  timestampMs: number;
+}
+
 export interface BattleRound {
   roundNumber: number;
   rootNote: number;
+  scaleNotes: number[];
   p1DurationMs: number;
   p1Errors: number;
+  p1KeyEvents: KeyEvent[];
   p2DurationMs: number;
   p2Errors: number;
+  p2KeyEvents: KeyEvent[];
   winner: string | null;
 }
 
@@ -53,6 +63,7 @@ export interface BattleRecord {
   player2Name: string;
   scaleType: string;
   octaves: number;
+  difficulty: string;
   rounds: string;
   p1Wins: number;
   p2Wins: number;
@@ -60,6 +71,16 @@ export interface BattleRecord {
   totalDurationMs: number;
   date: string;
   createdAt?: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  playerName: string;
+  totalGames: number;
+  wins: number;
+  winRate: number;
+  avgDurationPerRoundMs: number;
+  avgErrorsPerRound: number;
 }
 
 export interface BattleRecordDisplay {
@@ -101,6 +122,7 @@ interface AppState {
   savePracticeSession: (session: PracticeSession) => Promise<number>;
   saveBattleRecord: (record: BattleRecord) => Promise<number>;
   loadBattleHistory: (limit?: number) => Promise<BattleRecordDisplay[]>;
+  loadLeaderboard: (limit?: number) => Promise<LeaderboardEntry[]>;
   
   showAchievementNotification: (achievement: Achievement) => void;
 }
@@ -267,6 +289,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       return history;
     } catch (e) {
       console.error("Failed to load battle history:", e);
+      return [];
+    }
+  },
+
+  loadLeaderboard: async (limit = 20) => {
+    try {
+      const leaderboard = await invoke<LeaderboardEntry[]>("get_leaderboard", { limit });
+      return leaderboard;
+    } catch (e) {
+      console.error("Failed to load leaderboard:", e);
       return [];
     }
   },

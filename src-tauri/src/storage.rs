@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use chrono::{Duration, Local, NaiveDate, Datelike};
 use dirs::data_dir;
-use crate::models::{Achievement, PracticeSession, WeeklyStats, BattleRecord, BattleRecordDisplay};
+use crate::models::{Achievement, PracticeSession, WeeklyStats, BattleRecord, BattleRecordDisplay, LeaderboardEntry, BattleRound};
 use crate::AppState;
 
 pub struct Storage {
@@ -70,6 +70,7 @@ impl Storage {
                 player2_name TEXT NOT NULL,
                 scale_type TEXT NOT NULL,
                 octaves INTEGER NOT NULL,
+                difficulty TEXT NOT NULL DEFAULT 'easy',
                 rounds TEXT NOT NULL,
                 p1_wins INTEGER NOT NULL DEFAULT 0,
                 p2_wins INTEGER NOT NULL DEFAULT 0,
@@ -80,6 +81,11 @@ impl Storage {
             )",
             [],
         )?;
+
+        let _ = conn.execute(
+            "ALTER TABLE battle_records ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'easy'",
+            [],
+        );
 
         Self::init_achievements(conn)?;
         Self::init_default_settings(conn)?;
@@ -342,14 +348,15 @@ impl Storage {
         let conn = self.get_conn();
         conn.execute(
             "INSERT INTO battle_records (
-                player1_name, player2_name, scale_type, octaves, rounds,
+                player1_name, player2_name, scale_type, octaves, difficulty, rounds,
                 p1_wins, p2_wins, winner, total_duration_ms, date
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             [
                 &record.player1_name,
                 &record.player2_name,
                 &record.scale_type,
                 &record.octaves.to_string(),
+                &record.difficulty,
                 &record.rounds,
                 &record.p1_wins.to_string(),
                 &record.p2_wins.to_string(),
@@ -384,6 +391,91 @@ impl Storage {
         })?;
         
         Ok(records.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn get_leaderboard(&self, limit: u32) -> Result<Vec<LeaderboardEntry>> {
+        let conn = self.get_conn();
+        
+        let mut stmt = conn.prepare(
+            "SELECT 
+                player_name,
+                COUNT(*) as total_games,
+                SUM(CASE WHEN winner = player_name THEN 1 ELSE 0 END) as wins,
+                SUM(total_duration_ms) as total_duration,
+                SUM(p1_errors + p2_errors) as total_errors,
+                SUM(round_count) as total_rounds
+             FROM (
+                 SELECT 
+                     player1_name as player_name,
+                     winner,
+                     total_duration_ms,
+                     p1_errors,
+                     p2_errors,
+                     (p1_wins + p2_wins) as round_count,
+                     created_at
+                 FROM battle_records
+                 UNION ALL
+                 SELECT 
+                     player2_name as player_name,
+                     winner,
+                     total_duration_ms,
+                     p1_errors,
+                     p2_errors,
+                     (p1_wins + p2_wins) as round_count,
+                     created_at
+                 FROM battle_records
+             ) AS player_stats
+             GROUP BY player_name
+             ORDER BY 
+                (wins * 1.0 / COUNT(*)) DESC,
+                COUNT(*) DESC,
+                total_duration ASC
+             LIMIT ?1",
+        )?;
+        
+        let entries = stmt.query_map([limit.to_string()], |row| {
+            let player_name: String = row.get(0)?;
+            let total_games: u32 = row.get(1)?;
+            let wins: u32 = row.get(2)?;
+            let total_duration: i64 = row.get(3)?;
+            let total_errors: i64 = row.get(4)?;
+            let total_rounds: i64 = row.get(5)?;
+            
+            let win_rate = if total_games > 0 {
+                wins as f64 / total_games as f64
+            } else {
+                0.0
+            };
+            
+            let avg_duration_per_round_ms = if total_rounds > 0 {
+                (total_duration as f64 / total_rounds as f64) as u64
+            } else {
+                0
+            };
+            
+            let avg_errors_per_round = if total_rounds > 0 {
+                total_errors as f64 / total_rounds as f64
+            } else {
+                0.0
+            };
+            
+            Ok(LeaderboardEntry {
+                rank: 0,
+                player_name,
+                total_games,
+                wins,
+                win_rate,
+                avg_duration_per_round_ms,
+                avg_errors_per_round,
+            })
+        })?;
+        
+        let mut result: Vec<LeaderboardEntry> = entries.filter_map(|e| e.ok()).collect();
+        for (i, entry) in result.iter_mut().enumerate() {
+            entry.rank = (i + 1) as u32;
+        }
+        
+        Ok(result)
     }
 }
 
@@ -461,5 +553,12 @@ pub fn save_battle_record(state: tauri::State<AppState>, record: BattleRecord) -
 pub fn get_battle_history(state: tauri::State<AppState>, limit: u32) -> Result<Vec<BattleRecordDisplay>, String> {
     state.storage.lock()
         .get_battle_history(limit)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_leaderboard(state: tauri::State<AppState>, limit: u32) -> Result<Vec<LeaderboardEntry>, String> {
+    state.storage.lock()
+        .get_leaderboard(limit)
         .map_err(|e| e.to_string())
 }

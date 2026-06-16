@@ -59,13 +59,25 @@ pub enum SoundPreset {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct KeyEvent {
+    pub note: u8,
+    pub target_note: u8,
+    pub is_correct: bool,
+    pub timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleRound {
     pub round_number: u32,
     pub root_note: u8,
+    pub scale_notes: Vec<u8>,
     pub p1_duration_ms: u64,
     pub p1_errors: u32,
+    pub p1_key_events: Vec<KeyEvent>,
     pub p2_duration_ms: u64,
     pub p2_errors: u32,
+    pub p2_key_events: Vec<KeyEvent>,
     pub winner: Option<String>,
 }
 
@@ -77,6 +89,7 @@ pub struct BattleRecord {
     pub player2_name: String,
     pub scale_type: String,
     pub octaves: u32,
+    pub difficulty: String,
     pub rounds: String,
     pub p1_wins: u32,
     pub p2_wins: u32,
@@ -84,6 +97,18 @@ pub struct BattleRecord {
     pub total_duration_ms: u64,
     pub date: NaiveDate,
     pub created_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LeaderboardEntry {
+    pub rank: u32,
+    pub player_name: String,
+    pub total_games: u32,
+    pub wins: u32,
+    pub win_rate: f64,
+    pub avg_duration_per_round_ms: u64,
+    pub avg_errors_per_round: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

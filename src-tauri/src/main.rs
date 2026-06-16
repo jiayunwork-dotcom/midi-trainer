@@ -65,6 +65,7 @@ fn main() {
             storage::get_today_practice_time,
             storage::save_battle_record,
             storage::get_battle_history,
+            storage::get_leaderboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import VirtualKeyboard from "../components/VirtualKeyboard";
+import ReplayModal from "../components/ReplayModal";
 import { SCALES, midiNoteToName, NOTE_NAMES } from "../utils/musicTheory";
-import { useAppStore, BattleRound } from "../store/appStore";
-import { useBattleStore } from "../store/battleStore";
+import { useAppStore, BattleRound, LeaderboardEntry } from "../store/appStore";
+import { useBattleStore, DIFFICULTY_CONFIG, DifficultyMode } from "../store/battleStore";
 import "../styles/battle.css";
+import "../styles/replay.css";
 
 const Battle = () => {
-  const { activeNotes, saveBattleRecord, loadBattleHistory } = useAppStore();
+  const { activeNotes, saveBattleRecord, loadBattleHistory, loadLeaderboard } = useAppStore();
   const {
     phase,
     countdown,
@@ -18,6 +20,7 @@ const Battle = () => {
     player2,
     selectedScale,
     octaves,
+    difficulty,
     rootNote,
     scaleNotes,
     rounds,
@@ -27,6 +30,7 @@ const Battle = () => {
     setPlayerReady,
     setSelectedScale,
     setOctaves,
+    setDifficulty,
     handleNotePlayed,
     resetBattle,
   } = useBattleStore();
@@ -36,6 +40,9 @@ const Battle = () => {
   const [celebrationVisible, setCelebrationVisible] = useState(false);
   const prevActiveNotesRef = useRef<Map<number, any>>(new Map());
   const hasSavedRecordRef = useRef(false);
+  const [leaderboardVisible, setLeaderboardVisible] = useState(false);
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [replayRound, setReplayRound] = useState<BattleRound | null>(null);
 
   useEffect(() => {
     loadBattleHistory(10).then(setBattleHistory);
@@ -132,6 +139,18 @@ const Battle = () => {
     return { accuracy, elapsed, totalNotes };
   };
 
+  const openLeaderboard = async () => {
+    const data = await loadLeaderboard(20);
+    setLeaderboardData(data);
+    setLeaderboardVisible(true);
+  };
+
+  const difficultyOptions: { value: DifficultyMode; name: string; desc: string }[] = [
+    { value: "easy", ...DIFFICULTY_CONFIG.easy },
+    { value: "medium", ...DIFFICULTY_CONFIG.medium },
+    { value: "hard", ...DIFFICULTY_CONFIG.hard },
+  ];
+
   const PlayerArea = ({ player, playerNum, isTop }: { player: typeof player1; playerNum: 1 | 2; isTop: boolean }) => {
     const stats = getPlayerStats(player);
     const isActive = phase === "playing" && currentPlayer === playerNum;
@@ -204,7 +223,12 @@ const Battle = () => {
   const LobbyScreen = () => (
     <div className="lobby-screen">
       <div className="lobby-header">
-        <h1 className="lobby-title">🎮 练习对战</h1>
+        <div className="lobby-header-top">
+          <h1 className="lobby-title">🎮 练习对战</h1>
+          <button className="leaderboard-btn" onClick={openLeaderboard}>
+            🏆 排行榜
+          </button>
+        </div>
         <p className="lobby-subtitle">双人对战，比比谁的音阶更快更准！</p>
       </div>
 
@@ -288,6 +312,21 @@ const Battle = () => {
                 ))}
               </div>
             </div>
+            <div className="setting-item">
+              <label>难度模式</label>
+              <div className="difficulty-options">
+                {difficultyOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    className={`difficulty-btn ${difficulty === opt.value ? "active" : ""}`}
+                    onClick={() => setDifficulty(opt.value)}
+                  >
+                    <span className="diff-name">{opt.name}</span>
+                    <span className="diff-desc">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -331,6 +370,56 @@ const Battle = () => {
     </div>
   );
 
+  const LeaderboardModal = () => (
+    <div className="leaderboard-overlay" onClick={() => setLeaderboardVisible(false)}>
+      <div className="leaderboard-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="leaderboard-header">
+          <h2>🏆 排行榜</h2>
+          <button className="leaderboard-close-btn" onClick={() => setLeaderboardVisible(false)}>✕</button>
+        </div>
+
+        {leaderboardData.length > 0 ? (
+          <table className="leaderboard-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>玩家</th>
+                <th>场次</th>
+                <th>胜场</th>
+                <th>胜率</th>
+                <th>平均用时/回合</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leaderboardData.map((entry) => {
+                const winRateClass = entry.winRate >= 0.7 ? "win-rate-high" : entry.winRate >= 0.5 ? "win-rate-medium" : "win-rate-low";
+                return (
+                  <tr key={entry.playerName}>
+                    <td className="rank-cell">
+                      <span className={`rank-${entry.rank}`}>
+                        {entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : entry.rank === 3 ? "🥉" : entry.rank}
+                      </span>
+                    </td>
+                    <td className="player-name-cell">{entry.playerName}</td>
+                    <td className="stats-cell">{entry.totalGames}</td>
+                    <td className="stats-cell">{entry.wins}</td>
+                    <td className={`stats-cell ${winRateClass}`}>{(entry.winRate * 100).toFixed(1)}%</td>
+                    <td className="stats-cell">{(entry.avgDurationPerRoundMs / 1000).toFixed(2)}s</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <div className="empty-leaderboard">
+            <div className="icon">🎯</div>
+            <p>暂无排行数据，快去对战吧！</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const CountdownScreen = () => (
     <div className="countdown-screen">
       <div className="countdown-number" key={countdown}>
@@ -346,6 +435,7 @@ const Battle = () => {
         <div className="round-info">
           <span className="round-label">第 {currentRound} 回合</span>
           <span className="round-scale">{NOTE_NAMES[rootNote % 12]} {selectedScale.nameCn}</span>
+          <span className={`difficulty-badge ${difficulty}`}>{DIFFICULTY_CONFIG[difficulty].name}</span>
         </div>
         <div className="score-info">
           <span className="score p1">{player1.name}: {rounds.filter(r => r.winner === player1.name).length} 胜</span>
@@ -388,6 +478,7 @@ const Battle = () => {
               <span>错误</span>
               <span>综合得分</span>
               <span>结果</span>
+              <span>回放</span>
             </div>
             <div className={`score-row ${currentRoundData.winner === player1.name ? "winner" : ""}`}>
               <span className="player-name p1">{player1.name}</span>
@@ -397,6 +488,11 @@ const Battle = () => {
               <span className="result-badge">
                 {currentRoundData.winner === player1.name ? "🏆 胜" : currentRoundData.winner === player2.name ? "负" : "平"}
               </span>
+              <span>
+                <button className="replay-btn" onClick={() => setReplayRound(currentRoundData)}>
+                  ▶ 回放
+                </button>
+              </span>
             </div>
             <div className={`score-row ${currentRoundData.winner === player2.name ? "winner" : ""}`}>
               <span className="player-name p2">{player2.name}</span>
@@ -405,6 +501,11 @@ const Battle = () => {
               <span className="score-value">{(p2Score / 1000).toFixed(2)}</span>
               <span className="result-badge">
                 {currentRoundData.winner === player2.name ? "🏆 胜" : currentRoundData.winner === player1.name ? "负" : "平"}
+              </span>
+              <span>
+                <button className="replay-btn" onClick={() => setReplayRound(currentRoundData)}>
+                  ▶ 回放
+                </button>
               </span>
             </div>
           </div>
@@ -486,6 +587,7 @@ const Battle = () => {
                   <th>{player2.name} 用时</th>
                   <th>{player2.name} 错误</th>
                   <th>胜者</th>
+                  <th>回放</th>
                 </tr>
               </thead>
               <tbody>
@@ -500,6 +602,11 @@ const Battle = () => {
                     <td className={round.winner === player1.name ? "p1" : round.winner === player2.name ? "p2" : ""}>
                       {round.winner || "平局"}
                     </td>
+                    <td>
+                      <button className="replay-btn" onClick={() => setReplayRound(round)}>
+                        ▶ 回放
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -511,6 +618,7 @@ const Battle = () => {
                   <td><strong>{(totalP2Duration / 1000).toFixed(2)}s</strong></td>
                   <td className={totalP2Errors > 0 ? "text-error" : ""}><strong>{totalP2Errors}</strong></td>
                   <td><strong>{winner}</strong></td>
+                  <td></td>
                 </tr>
               </tfoot>
             </table>
@@ -535,6 +643,15 @@ const Battle = () => {
       {phase === "playing" && <PlayingScreen />}
       {phase === "roundBreak" && <RoundBreakScreen />}
       {phase === "finished" && <FinishedScreen />}
+      {leaderboardVisible && <LeaderboardModal />}
+      {replayRound && (
+        <ReplayModal
+          round={replayRound}
+          player1Name={player1.name}
+          player2Name={player2.name}
+          onClose={() => setReplayRound(null)}
+        />
+      )}
     </div>
   );
 };

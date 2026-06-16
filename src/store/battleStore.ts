@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import { SCALES, ScaleData, getScaleNotes } from "../utils/musicTheory";
-import { BattleRound, BattleRecord } from "./appStore";
+import { BattleRound, BattleRecord, KeyEvent } from "./appStore";
 
 export type BattlePhase = "lobby" | "countdown" | "playing" | "roundBreak" | "finished";
 export type CurrentPlayer = 1 | 2;
+export type DifficultyMode = "easy" | "medium" | "hard";
 
 export interface PlayerState {
   name: string;
@@ -14,6 +15,7 @@ export interface PlayerState {
   startTime: number;
   durationMs: number;
   isTurn: boolean;
+  keyEvents: KeyEvent[];
 }
 
 export interface BattleState {
@@ -23,6 +25,7 @@ export interface BattleState {
   currentRound: number;
   totalRounds: number;
   currentPlayer: CurrentPlayer;
+  difficulty: DifficultyMode;
   
   player1: PlayerState;
   player2: PlayerState;
@@ -40,6 +43,7 @@ export interface BattleState {
   setPlayerReady: (player: CurrentPlayer, ready: boolean) => void;
   setSelectedScale: (scale: ScaleData) => void;
   setOctaves: (octaves: number) => void;
+  setDifficulty: (difficulty: DifficultyMode) => void;
   
   startCountdown: () => void;
   startBattle: () => void;
@@ -53,6 +57,14 @@ export interface BattleState {
   resetBattle: () => void;
 }
 
+const DIFFICULTY_CONFIG: Record<DifficultyMode, { name: string; desc: string }> = {
+  easy: { name: "简单", desc: "正序弹奏音阶" },
+  medium: { name: "中等", desc: "正序+反序弹奏" },
+  hard: { name: "困难", desc: "随机顺序弹奏" },
+};
+
+export { DIFFICULTY_CONFIG };
+
 const createInitialPlayerState = (playerNum: 1 | 2): PlayerState => ({
   name: `Player ${playerNum}`,
   ready: false,
@@ -62,9 +74,19 @@ const createInitialPlayerState = (playerNum: 1 | 2): PlayerState => ({
   startTime: 0,
   durationMs: 0,
   isTurn: playerNum === 1,
+  keyEvents: [],
 });
 
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
+
+function shuffleArray<T>(array: T[]): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
 
 export const useBattleStore = create<BattleState>((set, get) => ({
   phase: "lobby",
@@ -73,6 +95,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
   currentRound: 1,
   totalRounds: 3,
   currentPlayer: 1,
+  difficulty: "easy",
   
   player1: createInitialPlayerState(1),
   player2: createInitialPlayerState(2),
@@ -127,6 +150,10 @@ export const useBattleStore = create<BattleState>((set, get) => ({
     set({ octaves });
   },
 
+  setDifficulty: (difficulty) => {
+    set({ difficulty });
+  },
+
   startCountdown: () => {
     set({ phase: "countdown", countdown: 3 });
     
@@ -162,6 +189,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         startTime: Date.now(),
         durationMs: 0,
         isTurn: true,
+        keyEvents: [],
       },
       player2: {
         ...get().player2,
@@ -171,6 +199,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         startTime: 0,
         durationMs: 0,
         isTurn: false,
+        keyEvents: [],
       },
       currentPlayer: 1,
     });
@@ -184,11 +213,23 @@ export const useBattleStore = create<BattleState>((set, get) => ({
       }
     }
     const randomRoot = rootNoteOptions[Math.floor(Math.random() * rootNoteOptions.length)];
-    const notes = getScaleNotes(randomRoot, get().selectedScale, get().octaves);
+    const baseNotes = getScaleNotes(randomRoot, get().selectedScale, get().octaves);
+    
+    const difficulty = get().difficulty;
+    let finalNotes: number[];
+    
+    if (difficulty === "easy") {
+      finalNotes = baseNotes;
+    } else if (difficulty === "medium") {
+      const descendingNotes = baseNotes.slice(0, -1).reverse();
+      finalNotes = [...baseNotes, ...descendingNotes];
+    } else {
+      finalNotes = shuffleArray(baseNotes);
+    }
     
     set({
       rootNote: randomRoot,
-      scaleNotes: notes,
+      scaleNotes: finalNotes,
     });
   },
 
@@ -199,8 +240,18 @@ export const useBattleStore = create<BattleState>((set, get) => ({
     const playerKey = state.currentPlayer === 1 ? "player1" : "player2";
     const player = state[playerKey];
     const targetNote = state.scaleNotes[player.currentNoteIndex];
+    const isCorrect = note === targetNote;
     
-    if (note === targetNote) {
+    const keyEvent: KeyEvent = {
+      note,
+      targetNote,
+      isCorrect,
+      timestampMs: Date.now() - player.startTime,
+    };
+    
+    const newKeyEvents = [...player.keyEvents, keyEvent];
+    
+    if (isCorrect) {
       const newIndex = player.currentNoteIndex + 1;
       const newCorrectNotes = player.correctNotes + 1;
       
@@ -213,6 +264,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
             currentNoteIndex: newIndex,
             correctNotes: newCorrectNotes,
             durationMs,
+            keyEvents: newKeyEvents,
           },
         });
         
@@ -225,6 +277,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
           ...player,
           currentNoteIndex: newIndex,
           correctNotes: newCorrectNotes,
+          keyEvents: newKeyEvents,
         },
       });
       
@@ -234,6 +287,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         [playerKey]: {
           ...player,
           wrongNotes: player.wrongNotes + 1,
+          keyEvents: newKeyEvents,
         },
       });
       
@@ -255,6 +309,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
           currentNoteIndex: 0,
           correctNotes: 0,
           wrongNotes: 0,
+          keyEvents: [],
         },
       });
     } else {
@@ -278,10 +333,13 @@ export const useBattleStore = create<BattleState>((set, get) => ({
     const roundData: BattleRound = {
       roundNumber: state.currentRound,
       rootNote: state.rootNote,
+      scaleNotes: state.scaleNotes,
       p1DurationMs: state.player1.durationMs,
       p1Errors: state.player1.wrongNotes,
+      p1KeyEvents: state.player1.keyEvents,
       p2DurationMs: state.player2.durationMs,
       p2Errors: state.player2.wrongNotes,
+      p2KeyEvents: state.player2.keyEvents,
       winner,
     };
     
@@ -319,6 +377,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         player2Name: state.player2.name,
         scaleType: state.selectedScale.name,
         octaves: state.octaves,
+        difficulty: state.difficulty,
         rounds: JSON.stringify(newRounds),
         p1Wins,
         p2Wins,
@@ -374,6 +433,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         startTime: Date.now(),
         durationMs: 0,
         isTurn: true,
+        keyEvents: [],
       },
       player2: {
         ...state.player2,
@@ -383,6 +443,7 @@ export const useBattleStore = create<BattleState>((set, get) => ({
         startTime: 0,
         durationMs: 0,
         isTurn: false,
+        keyEvents: [],
       },
     });
   },
