@@ -109,6 +109,20 @@ const Battle = () => {
     }))
   ), []);
 
+  const emptyMap = useMemo(() => new Map<number, any>(), []);
+
+  const keyboardRange = useMemo(() => {
+    if (!scaleNotes || scaleNotes.length === 0) {
+      return { startNote: 47, endNote: 84 };
+    }
+    const min = Math.min(...scaleNotes);
+    const max = Math.max(...scaleNotes);
+    return {
+      startNote: Math.max(12, min - 2),
+      endNote: Math.min(108, max + 2),
+    };
+  }, [scaleNotes]);
+
   const getPlayerStats = (player: typeof player1) => {
     const totalNotes = player.correctNotes + player.wrongNotes;
     const accuracy = totalNotes > 0 ? Math.round((player.correctNotes / totalNotes) * 100) : 0;
@@ -121,12 +135,10 @@ const Battle = () => {
   const PlayerArea = ({ player, playerNum, isTop }: { player: typeof player1; playerNum: 1 | 2; isTop: boolean }) => {
     const stats = getPlayerStats(player);
     const isActive = phase === "playing" && currentPlayer === playerNum;
-    const targetNote = isActive && player.currentNoteIndex < scaleNotes.length 
+    const scaleLen = scaleNotes.length;
+    const targetNote = isActive && player.currentNoteIndex < scaleLen 
       ? scaleNotes[player.currentNoteIndex] 
       : null;
-    
-    const startNote = Math.min(...scaleNotes) - 1;
-    const endNote = Math.max(...scaleNotes) + 1;
 
     return (
       <div className={`player-area ${isTop ? "player-1" : "player-2"} ${isActive ? "active" : ""} ${!isActive && phase === "playing" ? "waiting" : ""}`}>
@@ -140,7 +152,7 @@ const Battle = () => {
           <div className="player-stats">
             <div className="stat-item">
               <span className="stat-label">进度</span>
-              <span className="stat-value">{player.currentNoteIndex} / {scaleNotes.length}</span>
+              <span className="stat-value">{player.currentNoteIndex} / {scaleLen}</span>
             </div>
             <div className="stat-item">
               <span className="stat-label">正确率</span>
@@ -162,7 +174,7 @@ const Battle = () => {
         <div className="progress-bar-container">
           <div 
             className="progress-bar" 
-            style={{ width: `${(player.currentNoteIndex / Math.max(scaleNotes.length, 1)) * 100}%` }}
+            style={{ width: `${(player.currentNoteIndex / Math.max(scaleLen, 1)) * 100}%` }}
           />
         </div>
 
@@ -177,11 +189,11 @@ const Battle = () => {
 
         <div className="battle-keyboard">
           <VirtualKeyboard
-            activeNotes={isActive ? activeNotes : new Map()}
+            activeNotes={isActive ? activeNotes : emptyMap}
             highlightedNotes={scaleNotes}
             targetNote={isActive ? targetNote : null}
-            startNote={startNote}
-            endNote={endNote}
+            startNote={keyboardRange.startNote}
+            endNote={keyboardRange.endNote}
             showNoteNames={true}
           />
         </div>

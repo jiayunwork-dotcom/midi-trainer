@@ -58,6 +58,7 @@ pub enum SoundPreset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleRound {
     pub round_number: u32,
     pub root_note: u8,
@@ -69,6 +70,7 @@ pub struct BattleRound {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleRecord {
     pub id: Option<i64>,
     pub player1_name: String,
@@ -85,6 +87,7 @@ pub struct BattleRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BattleRecordDisplay {
     pub id: i64,
     pub player1_name: String,

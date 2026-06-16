@@ -64,6 +64,8 @@ const createInitialPlayerState = (playerNum: 1 | 2): PlayerState => ({
   isTurn: playerNum === 1,
 });
 
+let countdownInterval: ReturnType<typeof setInterval> | null = null;
+
 export const useBattleStore = create<BattleState>((set, get) => ({
   phase: "lobby",
   countdown: 3,
@@ -93,12 +95,26 @@ export const useBattleStore = create<BattleState>((set, get) => ({
 
   setPlayerReady: (player, ready) => {
     const key = player === 1 ? "player1" : "player2";
+    const prevState = get();
+    
+    const wasInCountdown = prevState.phase === "countdown";
+    
     set(state => ({
       [key]: { ...state[key], ready },
     }));
     
     const state = get();
-    if (state.player1.ready && state.player2.ready) {
+    
+    if (wasInCountdown && !ready) {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+      set({ phase: "lobby", countdown: 3 });
+      return;
+    }
+    
+    if (!wasInCountdown && state.player1.ready && state.player2.ready) {
       get().startCountdown();
     }
   },
@@ -114,12 +130,19 @@ export const useBattleStore = create<BattleState>((set, get) => ({
   startCountdown: () => {
     set({ phase: "countdown", countdown: 3 });
     
-    const interval = setInterval(() => {
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+    }
+    
+    countdownInterval = setInterval(() => {
       const current = get().countdown;
       if (current > 1) {
         set({ countdown: current - 1 });
       } else {
-        clearInterval(interval);
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
         get().startBattle();
       }
     }, 1000);
