@@ -424,80 +424,137 @@ impl Storage {
         
         let mut stmt = conn.prepare(
             "SELECT 
-                player_name,
-                COUNT(*) as total_games,
-                SUM(CASE WHEN winner = player_name THEN 1 ELSE 0 END) as wins,
-                SUM(player_duration) as total_player_duration,
-                SUM(player_errors) as total_player_errors,
-                SUM(round_count) as total_rounds
-             FROM (
-                 SELECT 
-                     player1_name as player_name,
-                     winner,
-                     p1_total_duration_ms as player_duration,
-                     p1_total_errors as player_errors,
-                     (p1_wins + p2_wins) as round_count
-                 FROM battle_records
-                 UNION ALL
-                 SELECT 
-                     player2_name as player_name,
-                     winner,
-                     p2_total_duration_ms as player_duration,
-                     p2_total_errors as player_errors,
-                     (p1_wins + p2_wins) as round_count
-                 FROM battle_records
-             ) AS player_stats
-             GROUP BY player_name
-             ORDER BY 
-                (wins * 1.0 / COUNT(*)) DESC,
-                COUNT(*) DESC,
-                total_player_duration ASC
-             LIMIT ?1",
+                player1_name, player2_name, winner,
+                p1_total_errors, p2_total_errors,
+                p1_total_duration_ms, p2_total_duration_ms,
+                p1_wins, p2_wins, rounds
+             FROM battle_records
+             ORDER BY created_at ASC",
         )?;
         
-        let entries = stmt.query_map([limit.to_string()], |row| {
-            let player_name: String = row.get(0)?;
-            let total_games: u32 = row.get(1)?;
-            let wins: u32 = row.get(2)?;
-            let total_player_duration: i64 = row.get(3)?;
-            let total_player_errors: i64 = row.get(4)?;
-            let total_rounds: i64 = row.get(5)?;
-            
-            let win_rate = if total_games > 0 {
-                wins as f64 / total_games as f64
-            } else {
-                0.0
-            };
-            
-            let avg_duration_per_round_ms = if total_rounds > 0 {
-                (total_player_duration as f64 / total_rounds as f64) as u64
-            } else {
-                0
-            };
-            
-            let avg_errors_per_round = if total_rounds > 0 {
-                total_player_errors as f64 / total_rounds as f64
-            } else {
-                0.0
-            };
-            
-            Ok(LeaderboardEntry {
-                rank: 0,
-                player_name,
-                total_games,
-                wins,
-                win_rate,
-                avg_duration_per_round_ms,
-                avg_errors_per_round,
-            })
+        use std::collections::HashMap;
+        struct PlayerStats {
+            total_games: u32,
+            wins: u32,
+            total_duration: u64,
+            total_errors: u32,
+            total_rounds: u32,
+        }
+        
+        let mut stats_map: HashMap<String, PlayerStats> = HashMap::new();
+        
+        let records = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, i64>(8)?,
+                row.get::<_, String>(9)?,
+            ))
         })?;
         
-        let mut result: Vec<LeaderboardEntry> = entries.filter_map(|e| e.ok()).collect();
-        for (i, entry) in result.iter_mut().enumerate() {
+        for record in records {
+            let (
+                p1_name, p2_name, winner,
+                p1_errors_col, p2_errors_col,
+                p1_dur_col, p2_dur_col,
+                p1_wins_col, p2_wins_col,
+                rounds_json
+            ) = record?;
+            
+            let round_count = (p1_wins_col + p2_wins_col) as u32;
+            let round_count = round_count.max(3);
+            
+            let (p1_total_errors, p2_total_errors, p1_total_duration, p2_total_duration) = 
+                if (p1_errors_col > 0 || p2_errors_col > 0 || p1_dur_col > 0 || p2_dur_col > 0) && p1_dur_col >= 0 && p2_dur_col >= 0 {
+                    (
+                        p1_errors_col.max(0) as u32,
+                        p2_errors_col.max(0) as u32,
+                        p1_dur_col.max(0) as u64,
+                        p2_dur_col.max(0) as u64,
+                    )
+                } else {
+                    let rounds: Vec<BattleRound> = serde_json::from_str(&rounds_json)
+                        .unwrap_or_default();
+                    let mut p1e = 0u32;
+                    let mut p2e = 0u32;
+                    let mut p1d = 0u64;
+                    let mut p2d = 0u64;
+                    for r in &rounds {
+                        p1e += r.p1_errors;
+                        p2e += r.p2_errors;
+                        p1d += r.p1_duration_ms;
+                        p2d += r.p2_duration_ms;
+                    }
+                    if p1d == 0 && p2d == 0 && !rounds.is_empty() {
+                        p1d = 5000;
+                        p2d = 5000;
+                    }
+                    (p1e, p2e, p1d, p2d)
+                };
+            
+            for (name, own_errors, own_duration, is_winner) in [
+                (p1_name.clone(), p1_total_errors, p1_total_duration, winner == p1_name),
+                (p2_name.clone(), p2_total_errors, p2_total_duration, winner == p2_name),
+            ] {
+                let entry = stats_map.entry(name).or_insert(PlayerStats {
+                    total_games: 0,
+                    wins: 0,
+                    total_duration: 0,
+                    total_errors: 0,
+                    total_rounds: 0,
+                });
+                entry.total_games += 1;
+                if is_winner {
+                    entry.wins += 1;
+                }
+                entry.total_duration += own_duration;
+                entry.total_errors += own_errors;
+                entry.total_rounds += round_count;
+            }
+        }
+        
+        let mut entries: Vec<LeaderboardEntry> = stats_map.into_iter()
+            .map(|(player_name, s)| {
+                let win_rate = if s.total_games > 0 {
+                    s.wins as f64 / s.total_games as f64
+                } else { 0.0 };
+                let avg_duration_per_round_ms = if s.total_rounds > 0 {
+                    (s.total_duration as f64 / s.total_rounds as f64) as u64
+                } else { 0 };
+                let avg_errors_per_round = if s.total_rounds > 0 {
+                    s.total_errors as f64 / s.total_rounds as f64
+                } else { 0.0 };
+                LeaderboardEntry {
+                    rank: 0,
+                    player_name,
+                    total_games: s.total_games,
+                    wins: s.wins,
+                    win_rate,
+                    avg_duration_per_round_ms,
+                    avg_errors_per_round,
+                }
+            })
+            .collect();
+        
+        entries.sort_by(|a, b| {
+            b.win_rate.partial_cmp(&a.win_rate).unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.total_games.cmp(&a.total_games))
+                .then_with(|| a.avg_duration_per_round_ms.cmp(&b.avg_duration_per_round_ms))
+                .then_with(|| a.player_name.cmp(&b.player_name))
+        });
+        
+        entries.truncate(limit as usize);
+        for (i, entry) in entries.iter_mut().enumerate() {
             entry.rank = (i + 1) as u32;
         }
         
-        Ok(result)
+        Ok(entries)
     }
 }
 

@@ -429,12 +429,25 @@ const Battle = () => {
     </div>
   );
 
-  const PlayingScreen = () => (
+  const PlayingScreen = () => {
+    const noteCountInfo = useMemo(() => {
+      if (!scaleNotes || scaleNotes.length === 0) return "";
+      if (difficulty === "easy") {
+        return ` ${scaleNotes.length} 音`;
+      } else if (difficulty === "medium") {
+        const n = (scaleNotes.length + 1) / 2;
+        return ` ${scaleNotes.length} 音 (${Math.round(n)}上行+${Math.round(n)-1}下行)`;
+      } else {
+        return ` ${scaleNotes.length} 音 (随机)`;
+      }
+    }, [scaleNotes, difficulty]);
+
+    return (
     <div className="playing-screen">
       <div className="battle-status-bar">
         <div className="round-info">
           <span className="round-label">第 {currentRound} 回合</span>
-          <span className="round-scale">{NOTE_NAMES[rootNote % 12]} {selectedScale.nameCn}</span>
+          <span className="round-scale">{NOTE_NAMES[rootNote % 12]} {selectedScale.nameCn} {octaves} 八度{noteCountInfo}</span>
           <span className={`difficulty-badge ${difficulty}`}>{DIFFICULTY_CONFIG[difficulty].name}</span>
         </div>
         <div className="score-info">
@@ -453,6 +466,7 @@ const Battle = () => {
       </div>
     </div>
   );
+  };
 
   const RoundBreakScreen = () => {
     if (!currentRoundData) return null;
